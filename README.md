@@ -1,0 +1,112 @@
+# Task Force 20 Website and Personnel Portal
+
+Public website and protected personnel-management portal for Task Force 20.
+
+## Current State
+
+- Public placeholder site at `https://taskforce20.com`
+- Node/Express backend on the TF20 VPS
+- MySQL/MariaDB data model managed by Prisma
+- Discord OAuth login for protected portal access
+- Server-side sessions stored in the database
+- Role and permission seed data for Applicant, Member, Recruiter, Staff, Command Staff, and System Admin
+- Live portal shell with Users & Roles management
+- Database-backed application submission and review flow
+
+## Important Security Rules
+
+Never commit real secrets or live exports.
+
+Ignored by git:
+
+- `.env`
+- `.private/`
+- generated Airtable roster exports
+- deployment zips
+- `dist/`
+- `release/`
+- `node_modules/`
+
+Use `.env.example` as the template for another workstation.
+
+## Local Development
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Copy the environment template:
+
+```bash
+cp .env.example .env
+```
+
+Then fill in local or staging values for:
+
+```text
+SESSION_SECRET
+DATABASE_URL
+DISCORD_CLIENT_ID
+DISCORD_CLIENT_SECRET
+DISCORD_CALLBACK_URL
+```
+
+Generate Prisma client and apply migrations:
+
+```bash
+npm run prisma:generate
+npm run prisma:migrate
+npm run db:seed
+```
+
+Run locally:
+
+```bash
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+## Validation
+
+Run syntax checks:
+
+```bash
+npm run check
+```
+
+## Deployment Notes
+
+The live app runs on the TF20 VPS behind Nginx with HTTPS for:
+
+```text
+https://taskforce20.com
+https://www.taskforce20.com
+```
+
+Deployment currently uses SSH to the VPS and a systemd service named `tf20`.
+Keep server-only secrets in `/opt/tf20/app/.env` on the VPS.
+
+Do not copy the live `.env` into this repository.
+
+## Airtable Migration
+
+Airtable is deprecated by this system and should only be used as a one-time
+migration source for existing records.
+
+The safe local Airtable bridge is:
+
+```bash
+node scripts/airtable-sync.mjs
+```
+
+Full roster exports should go into `.private/`, which is ignored by git.
+
+Missing Airtable fields should import as blank/null so unit staff can update
+them inside the website later.

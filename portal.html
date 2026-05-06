@@ -1,0 +1,790 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Task Force 20 protected portal prototype for applicant, member, staff, and command workflows."
+    />
+    <title>TF20 Portal Prototype</title>
+    <link rel="stylesheet" href="portal.css" />
+  </head>
+  <body>
+    <div class="portal-shell">
+      <aside class="sidebar" aria-label="Portal navigation">
+        <a class="portal-brand" href="/" aria-label="Task Force 20 public site">
+          <img src="assets/tf20-logo.png" alt="" />
+          <span>
+            <strong>TF20 Portal</strong>
+            <small>Prototype Access</small>
+          </span>
+        </a>
+
+        <div class="auth-card">
+          <span>Discord Session</span>
+          <strong id="currentUserName">Loading session</strong>
+          <p id="currentUserMeta">Checking live roles and permissions...</p>
+        </div>
+
+        <nav class="portal-nav">
+          <button class="nav-tab active" type="button" data-view="dashboard">Dashboard</button>
+          <button class="nav-tab" type="button" data-view="applications">Applications</button>
+          <button class="nav-tab" type="button" data-view="personnel">Personnel</button>
+          <button class="nav-tab" type="button" data-view="users">Users & Roles</button>
+          <button class="nav-tab" type="button" data-view="units">Units</button>
+          <button class="nav-tab" type="button" data-view="training">Training</button>
+          <button class="nav-tab" type="button" data-view="events">Events</button>
+          <button class="nav-tab" type="button" data-view="loa">LOA</button>
+          <button class="nav-tab" type="button" data-view="actions">Actions</button>
+          <button class="nav-tab" type="button" data-view="support">Support</button>
+          <button class="nav-tab" type="button" data-view="systems">Systems</button>
+          <button class="nav-tab" type="button" data-view="audit">Audit</button>
+        </nav>
+      </aside>
+
+      <main class="portal-main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Protected Personnel Management</p>
+            <h1 id="viewTitle">Dashboard</h1>
+          </div>
+          <div class="topbar-actions">
+            <a class="button ghost" href="/">Public Site</a>
+            <form class="logout-form" action="/logout" method="post">
+              <button class="button danger" type="submit">Log Out</button>
+            </form>
+            <button class="button primary" type="button" id="syncButton">Queue Discord Sync</button>
+          </div>
+        </header>
+
+        <section class="notice">
+          <strong>Prototype boundary:</strong>
+          This interface now uses live Discord authentication and server-side roles. Personnel, Discord, and RCON actions remain staged until each production workflow is approved.
+        </section>
+
+        <section class="view active" data-view-panel="dashboard">
+          <div class="metric-grid">
+            <article class="metric">
+              <span>Active Personnel</span>
+              <strong>42</strong>
+              <small>8 recruits, 3 reserve, 2 LOA</small>
+            </article>
+            <article class="metric">
+              <span>Applications</span>
+              <strong>11</strong>
+              <small>4 awaiting contact</small>
+            </article>
+            <article class="metric">
+              <span>Attendance Review</span>
+              <strong>6</strong>
+              <small>RCON suggestions pending</small>
+            </article>
+            <article class="metric">
+              <span>Audit Events</span>
+              <strong>128</strong>
+              <small>This month</small>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="panel role-panel" data-role-panel="applicant">
+              <div class="panel-heading">
+                <h2>Applicant Dashboard</h2>
+                <span>Self-service</span>
+              </div>
+              <div class="status-row">
+                <span>Application Status</span>
+                <strong>Interview Scheduled</strong>
+              </div>
+              <div class="status-row">
+                <span>Required Next Step</span>
+                <strong>Join voice interview Sunday 1800 CST</strong>
+              </div>
+              <ul class="check-list">
+                <li class="done">Discord connected</li>
+                <li class="done">Steam64 ID submitted</li>
+                <li>Microphone check</li>
+                <li>Modpack setup</li>
+              </ul>
+            </section>
+
+            <section class="panel role-panel" data-role-panel="member">
+              <div class="panel-heading">
+                <h2>Member Dashboard</h2>
+                <span>Self-service</span>
+              </div>
+              <div class="profile-chip">
+                <img src="assets/tf20-logo.png" alt="" />
+                <div>
+                  <strong>SPC Mako</strong>
+                  <span>A CO, 1/75th Ranger Regiment</span>
+                </div>
+              </div>
+              <div class="status-row">
+                <span>Upcoming Event</span>
+                <strong>Operation Iron Gate</strong>
+              </div>
+              <div class="status-row">
+                <span>Qualifications</span>
+                <strong>Rifleman, CLS, Basic Radio</strong>
+              </div>
+            </section>
+
+            <section class="panel role-panel" data-role-panel="staff">
+              <div class="panel-heading">
+                <h2>Staff Dashboard</h2>
+                <span>S1 / S3 / Training</span>
+              </div>
+              <div class="queue-list">
+                <article>
+                  <strong>Promotion packet</strong>
+                  <span>Raptor to SFC awaiting command decision</span>
+                </article>
+                <article>
+                  <strong>Qualification recommendation</strong>
+                  <span>Newman cleared for unit assignment</span>
+                </article>
+                <article>
+                  <strong>Attendance exception</strong>
+                  <span>Nightmare joined while on approved LOA</span>
+                </article>
+              </div>
+            </section>
+
+            <section class="panel role-panel" data-role-panel="command">
+              <div class="panel-heading">
+                <h2>Command Dashboard</h2>
+                <span>All personnel visibility</span>
+              </div>
+              <div class="readiness-bars">
+                <div><span>A CO</span><meter min="0" max="100" value="82"></meter><strong>82%</strong></div>
+                <div><span>SFOD-D</span><meter min="0" max="100" value="76"></meter><strong>76%</strong></div>
+                <div><span>SOAR</span><meter min="0" max="100" value="69"></meter><strong>69%</strong></div>
+              </div>
+            </section>
+
+            <section class="panel role-panel" data-role-panel="system">
+              <div class="panel-heading">
+                <h2>System Dashboard</h2>
+                <span>Technical only</span>
+              </div>
+              <div class="queue-list">
+                <article>
+                  <strong>Discord sync</strong>
+                  <span>2 role sync retries queued</span>
+                </article>
+                <article>
+                  <strong>RCON collector</strong>
+                  <span>Last poll completed 6 minutes ago</span>
+                </article>
+                <article>
+                  <strong>Access boundary</strong>
+                  <span>No default disciplinary or LOA detail visibility</span>
+                </article>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="applications">
+          <div class="section-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <h2>Applicant Submission</h2>
+                <span>Database-backed intake</span>
+              </div>
+              <form class="stack-form" id="applicationForm">
+                <label>
+                  Steam64 ID
+                  <input id="applicationSteam64" name="steam64Id" type="text" inputmode="numeric" placeholder="7656119..." />
+                </label>
+                <label>
+                  Timezone
+                  <input id="applicationTimezone" name="timezone" type="text" placeholder="CST, EST, GMT..." />
+                </label>
+                <label>
+                  Role Interest
+                  <input id="applicationInterest" name="roleInterest" type="text" required placeholder="Infantry, aviation, medical, radio, leadership..." />
+                </label>
+                <label>
+                  Availability
+                  <textarea id="applicationAvailability" name="availability" rows="3" required placeholder="Weekly availability, operation days, training constraints"></textarea>
+                </label>
+                <label>
+                  Arma / MILSIM Experience
+                  <textarea id="applicationExperience" name="experience" rows="4" required placeholder="Relevant Arma hours, units, roles, leadership, aviation, medical, radio, or new-player background"></textarea>
+                </label>
+                <label>
+                  Technical Readiness
+                  <textarea id="applicationReadiness" name="technicalReadiness" rows="3" placeholder="Modpack, TeamSpeak, ACRE/TFAR, microphone, controls, PC/network limitations"></textarea>
+                </label>
+                <label>
+                  Why Task Force 20?
+                  <textarea id="applicationMotivation" name="motivation" rows="4" placeholder="What you are looking for in the unit"></textarea>
+                </label>
+                <label>
+                  Rules / Expectations
+                  <textarea id="applicationRules" name="rulesAcknowledgement" rows="3" placeholder="Confirm you understand attendance, maturity, and realism expectations"></textarea>
+                </label>
+                <div class="action-row">
+                  <button class="button primary" type="submit" id="submitApplicationButton">Submit Application</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="panel wide">
+              <div class="panel-heading">
+                <h2>Application Pipeline</h2>
+                <span>Recruiting staff</span>
+              </div>
+              <div class="toolbar">
+                <input id="applicationSearch" type="search" placeholder="Search applicant, role interest, readiness..." aria-label="Search applications" />
+                <select id="applicationStatusFilter" aria-label="Application status filter">
+                  <option value="all">All statuses</option>
+                  <option value="Submitted">Submitted</option>
+                  <option value="UnderReview">Under Review</option>
+                  <option value="Contacted">Contacted</option>
+                  <option value="InterviewScheduled">Interview Scheduled</option>
+                  <option value="ConvertedToRecruit">Converted to Recruit</option>
+                  <option value="Denied">Denied</option>
+                </select>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Applicant</th>
+                      <th>Status</th>
+                      <th>Interest</th>
+                      <th>Availability</th>
+                      <th>Readiness</th>
+                    </tr>
+                  </thead>
+                  <tbody id="applicationRows"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Selected Application</h2>
+                <span id="applicationDetailStatus">No selection</span>
+              </div>
+              <div id="applicationDetail" class="detail-panel"></div>
+              <div class="action-row">
+                <button class="button" type="button" id="markContactedButton">Mark Contacted</button>
+                <button class="button primary" type="button" id="acceptApplicantButton">Accept</button>
+                <button class="button danger" type="button" id="denyApplicantButton">Deny</button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Decision Workflow</h2>
+                <span>Approval chain</span>
+              </div>
+              <ol class="step-list">
+                <li>Recruiter recommends accept or deny.</li>
+                <li>Recruiting leadership, S1, or Command approves.</li>
+                <li>Accepted applicant converts to Recruit.</li>
+                <li>Personnel profile is created and linked to application history.</li>
+                <li>Discord role sync is queued and audited.</li>
+              </ol>
+              <div class="section-note">
+                Application form sections: Account Identity, Basic Applicant Information, Availability, Experience, Role Interest, Technical Readiness, Rules / Expectations, Short-Answer Questions, Final Confirmation.
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="personnel">
+          <div class="section-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <h2>Personnel Roster</h2>
+                <span>Source of truth: TF20 database</span>
+              </div>
+              <div class="toolbar">
+                <input id="personnelSearch" type="search" placeholder="Search rank, alias, billet, unit..." aria-label="Search personnel" />
+                <select id="personnelStatusFilter" aria-label="Status filter">
+                  <option value="all">All statuses</option>
+                  <option value="Active">Active</option>
+                  <option value="Recruit">Recruit</option>
+                  <option value="Leave of Absence">Leave of Absence</option>
+                  <option value="Reserve">Reserve</option>
+                  <option value="Discharged">Discharged</option>
+                  <option value="Banned / Do Not Rehire">Banned / Do Not Rehire</option>
+                </select>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Rank</th>
+                      <th>Alias</th>
+                      <th>Primary Unit</th>
+                      <th>Primary Billet</th>
+                      <th>Status</th>
+                      <th>Flags</th>
+                    </tr>
+                  </thead>
+                  <tbody id="personnelRows"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Selected Profile</h2>
+                <span id="personnelDetailStatus">No selection</span>
+              </div>
+              <div id="personnelDetail" class="detail-panel"></div>
+              <div class="action-row">
+                <button class="button" type="button" id="flagTrainingButton">Flag Training</button>
+                <button class="button primary" type="button" id="recommendPromotionButton">Recommend Promotion</button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Permission Boundary</h2>
+                <span>Field-level access</span>
+              </div>
+              <p class="panel-copy">
+                System Admin can manage accounts, OAuth, Discord, RCON, and settings, but does not automatically view LOA details, disciplinary records, promotion justifications, or command notes.
+              </p>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="units">
+          <div class="section-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <h2>Editable Unit Tree</h2>
+                <span>Line units and staff sections stay separate</span>
+              </div>
+              <div class="unit-tree">
+                <ul>
+                  <li>Task Force 20
+                    <ul>
+                      <li>HHC
+                        <ul>
+                          <li>Recruit Holding / Training Pipeline</li>
+                          <li>A CO, 1/75th Ranger Regiment
+                            <ul>
+                              <li>A CO HHC</li>
+                              <li>1st Platoon
+                                <ul>
+                                  <li>Platoon Headquarters</li>
+                                  <li>1st Squad: A Team, B Team</li>
+                                  <li>2nd Squad: A Team, B Team</li>
+                                  <li>3rd Squad: A Team, B Team</li>
+                                  <li>Weapons Squad</li>
+                                </ul>
+                              </li>
+                            </ul>
+                          </li>
+                          <li>1 Troop, A Squadron, 1st SFOD-Delta: A Team, B Team</li>
+                          <li>B CO, 2/160th SOAR: B CO HHC, 1st Platoon, 1st Squad</li>
+                        </ul>
+                      </li>
+                    </ul>
+                  </li>
+                </ul>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>S-Shops</h2>
+                <span>Functional assignments</span>
+              </div>
+              <div class="queue-list">
+                <article><strong>S1 Personnel</strong><span>Records, LOA, promotions, awards, discharges, attendance review.</span></article>
+                <article><strong>S2 Intelligence</strong><span>Intel documents, campaign summaries, target packages, briefings.</span></article>
+                <article><strong>S3 Operations</strong><span>Operations calendar, training oversight, OPORD links, tasking.</span></article>
+                <article><strong>S4 Supply</strong><span>Supply requests, equipment, loadout resources, logistics forms.</span></article>
+                <article><strong>S6 IT / Systems</strong><span>Discord, website, server information, modpack, bug reports, RCON.</span></article>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Billet Model</h2>
+                <span>Separate from rank</span>
+              </div>
+              <p class="panel-copy">
+                Members have one current rank, one primary unit assignment, one primary billet, optional secondary billets, optional staff-section assignments, and multiple qualifications.
+              </p>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="training">
+          <div class="section-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <h2>Training and Qualifications</h2>
+                <span>Courses are not qualifications</span>
+              </div>
+              <div class="training-grid">
+                <article>
+                  <h3>Recruit Training Pipeline</h3>
+                  <p>Orientation, modpack/server setup, conduct expectations, infantry familiarization, radio procedures, ACE medical familiarization, and final recruit evaluation.</p>
+                </article>
+                <article>
+                  <h3>Qualification Approval</h3>
+                  <p>Instructors record results and recommend qualifications. Training authority approves routine qualifications and manages expirations.</p>
+                </article>
+                <article>
+                  <h3>Expiration Rules</h3>
+                  <p>Combat and aviation qualifications: 180 days. Leadership and instructor qualifications: 365 days. Basic onboarding: no expiration.</p>
+                </article>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Pending Recommendations</h2>
+                <span>Training authority</span>
+              </div>
+              <div class="queue-list">
+                <article><strong>Newman</strong><span>Basic Infantry Qualified, pending approval.</span></article>
+                <article><strong>Mako</strong><span>CLS requalification due in 22 days.</span></article>
+                <article><strong>Nightmare</strong><span>NVG Flight currency review required.</span></article>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Qualification Statuses</h2>
+                <span>Lifecycle</span>
+              </div>
+              <div class="tag-cloud">
+                <span>Recommended</span><span>Pending Approval</span><span>Active</span><span>Expired</span>
+                <span>Suspended</span><span>Revoked</span><span>Waived</span>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="events">
+          <div class="section-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <h2>Event Calendar and Attendance</h2>
+                <span>Manual oversight with RCON suggestions</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Event</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>RCON Signal</th>
+                      <th>Review</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Operation Iron Gate</td>
+                      <td>Operation</td>
+                      <td><span class="pill warning">Pending Attendance Review</span></td>
+                      <td>31 matched sessions</td>
+                      <td>4 exceptions</td>
+                    </tr>
+                    <tr>
+                      <td>Recruit Orientation</td>
+                      <td>Training Event</td>
+                      <td><span class="pill success">Completed</span></td>
+                      <td>Not required</td>
+                      <td>Finalized</td>
+                    </tr>
+                    <tr>
+                      <td>Mod Test</td>
+                      <td>Server Test</td>
+                      <td><span class="pill">Scheduled</span></td>
+                      <td>Collector armed</td>
+                      <td>Not started</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Attendance Defaults</h2>
+                <span>Prototype rules</span>
+              </div>
+              <ul class="plain-list">
+                <li>Grace period: 15 minutes</li>
+                <li>Minimum present threshold: 45 minutes</li>
+                <li>Minimum poll hits: 5</li>
+                <li>Minimum match confidence: High</li>
+                <li>Auto-finalize: No</li>
+                <li>Auto-suggest only: Yes</li>
+              </ul>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Manual Override</h2>
+                <span>Required audit fields</span>
+              </div>
+              <form class="stack-form">
+                <label>Member <input type="text" value="Mako" /></label>
+                <label>New Status <select><option>Present - Manual</option><option>Excused</option><option>Absent</option></select></label>
+                <label>Reason <textarea rows="4">Manual correction requires staff reason.</textarea></label>
+              </form>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="loa">
+          <div class="section-grid">
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Submit LOA</h2>
+                <span>Member workflow</span>
+              </div>
+              <form class="stack-form">
+                <label>Start Date <input type="date" value="2026-05-01" /></label>
+                <label>End Date <input type="date" value="2026-05-08" /></label>
+                <label>Reason Category
+                  <select>
+                    <option>Work</option><option>School</option><option>Family</option><option>Health / Personal</option><option>Military / Real-World Duty</option><option>Technical Issue</option><option>Temporary Burnout</option><option>Other</option>
+                  </select>
+                </label>
+                <label>Details <textarea rows="4">Do not over-collect private details.</textarea></label>
+              </form>
+            </section>
+
+            <section class="panel wide">
+              <div class="panel-heading">
+                <h2>LOA Queue</h2>
+                <span>S1 / delegated leadership</span>
+              </div>
+              <div class="queue-list">
+                <article><strong>Nightmare</strong><span>Reduced availability, 2026-04-20 to 2026-05-04, pending S1 review.</span></article>
+                <article><strong>Archer</strong><span>Work conflict, approved, attendance penalties suppressed.</span></article>
+                <article><strong>Slate</strong><span>Returned from LOA, return confirmation pending.</span></article>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="actions">
+          <div class="section-grid">
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Promotion Workflow</h2>
+                <span>S1 and Command</span>
+              </div>
+              <ol class="step-list">
+                <li>Unit leadership recommends.</li>
+                <li>S1 validates record.</li>
+                <li>Command Staff approves or denies.</li>
+                <li>S1 or Command applies rank change.</li>
+                <li>Rank history, Discord sync, and audit log are created.</li>
+              </ol>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Awards Queue</h2>
+                <span>Approval required</span>
+              </div>
+              <div class="queue-list">
+                <article><strong>Technical Contribution</strong><span>S6 recommends Repository Workflow award for modpack fix.</span></article>
+                <article><strong>Campaign / Deployment Award</strong><span>S3 ready for roster eligibility check.</span></article>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Disciplinary Records</h2>
+                <span>Restricted visibility</span>
+              </div>
+              <p class="panel-copy">
+                Disciplinary records are separate from administrative notes. Direct chain of command, S1, and Command may view according to scope. System Admin has no default access.
+              </p>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="support">
+          <div class="section-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <h2>Bug Report / Support Queue</h2>
+                <span>S6 / server / mod staff</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Title</th>
+                      <th>Category</th>
+                      <th>Severity</th>
+                      <th>Status</th>
+                      <th>Assigned</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>ACRE radio preset not loading</td><td>Mod Bug</td><td>High</td><td>In Review</td><td>S6</td></tr>
+                    <tr><td>Applicant cannot link Steam64</td><td>Application / Account Issue</td><td>Medium</td><td>Needs More Info</td><td>Recruiting</td></tr>
+                    <tr><td>Mission object cleanup issue</td><td>Mission Bug</td><td>Low</td><td>Assigned</td><td>Zeus Staff</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Report Form Fields</h2>
+                <span>Member support</span>
+              </div>
+              <div class="tag-cloud">
+                <span>Title</span><span>Summary</span><span>Description</span><span>Expected Behavior</span>
+                <span>Affected Users</span><span>Severity</span><span>Steps to Reproduce</span><span>RPT Log</span><span>Screenshots</span>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="users">
+          <div class="section-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <h2>Users & Roles</h2>
+                <span>System Admin</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>User</th>
+                      <th>Status</th>
+                      <th>Roles</th>
+                      <th>Last Login</th>
+                    </tr>
+                  </thead>
+                  <tbody id="userRows">
+                    <tr><td colspan="4">Loading users...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2 id="userDetailTitle">Role Assignment</h2>
+                <span id="userDetailStatus">Select a user</span>
+              </div>
+              <div class="identity-list" id="userIdentity"></div>
+              <div class="role-editor" id="roleEditor"></div>
+              <label class="stack-field" for="roleChangeReason">
+                <span>Audit Reason</span>
+                <textarea id="roleChangeReason" rows="3" placeholder="Reason for this access change"></textarea>
+              </label>
+              <div class="action-row">
+                <button class="button primary" type="button" id="saveRolesButton">Save Roles</button>
+                <button class="button ghost" type="button" id="reloadUsersButton">Reload</button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Role Catalog</h2>
+                <span>Seeded permissions</span>
+              </div>
+              <div class="role-catalog" id="roleCatalog"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="systems">
+          <div class="section-grid">
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Discord Sync</h2>
+                <span>Backend controlled</span>
+              </div>
+              <div class="queue-list">
+                <article><strong>Role Mapping</strong><span>Rank, status, billet, staff assignment, and qualification roles map from backend state.</span></article>
+                <article><strong>Retry Failed Syncs</strong><span>S6/System Admin can retry failed role updates.</span></article>
+                <article><strong>Authority Boundary</strong><span>Discord cannot override personnel records.</span></article>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>RCON Collector</h2>
+                <span>Attendance signals</span>
+              </div>
+              <p class="panel-copy">
+                The collector polls active player lists during event windows, stores raw observations, matches players to personnel, creates presence sessions, and suggests attendance for staff review.
+              </p>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Security Settings</h2>
+                <span>Server-side only</span>
+              </div>
+              <ul class="plain-list">
+                <li>Secrets outside source code</li>
+                <li>HTTPS only</li>
+                <li>Protected file storage</li>
+                <li>Soft-delete/archive personnel records</li>
+                <li>Staging required before personnel or Discord role changes</li>
+              </ul>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="audit">
+          <div class="section-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <h2>Audit Log</h2>
+                <span>Sensitive operations</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Timestamp</th>
+                      <th>Actor</th>
+                      <th>Module</th>
+                      <th>Action</th>
+                      <th>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody id="auditRows"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Break-Glass Access</h2>
+                <span>Emergency only</span>
+              </div>
+              <p class="panel-copy">
+                Emergency restricted-record access requires an explicit reason, creates a high-severity audit entry, notifies Command, notifies S1 if personnel data was accessed, expires quickly, and cannot be silently deleted.
+              </p>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="portal.js"></script>
+  </body>
+</html>
