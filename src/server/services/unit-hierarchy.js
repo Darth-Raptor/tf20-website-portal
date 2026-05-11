@@ -140,6 +140,10 @@ export const standardBilletDefinitions = [
   { unitKey: "sfod-a", name: "A Assistant Team Leader", category: "Staff Billets" },
   { unitKey: "sfod-b", name: "B Team Leader", category: "Staff Billets" },
   { unitKey: "sfod-b", name: "B Assistant Team Leader", category: "Staff Billets" },
+  { unitKey: "soar", name: "Commanding Officer", category: "Staff Billets" },
+  { unitKey: "soar", name: "Executive Officer", category: "Staff Billets" },
+  { unitKey: "soar", name: "Aviator", category: "Staff Billets" },
+  { unitKey: "soar", name: "Air Crew Member", category: "Staff Billets" },
 ];
 
 const definitionsByKey = new Map(unitDefinitions.map((definition) => [definition.key, definition]));
