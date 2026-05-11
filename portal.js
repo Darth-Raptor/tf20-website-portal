@@ -47,6 +47,25 @@ const personnelDetail = document.querySelector("#personnelDetail");
 const personnelDetailStatus = document.querySelector("#personnelDetailStatus");
 const profileDetail = document.querySelector("#profileDetail");
 const profileDetailStatus = document.querySelector("#profileDetailStatus");
+const loaForm = document.querySelector("#loaForm");
+const loaStartDate = document.querySelector("#loaStartDate");
+const loaEndDate = document.querySelector("#loaEndDate");
+const loaReasonCategory = document.querySelector("#loaReasonCategory");
+const loaDetails = document.querySelector("#loaDetails");
+const loaFormFeedback = document.querySelector("#loaFormFeedback");
+const submitLoaButton = document.querySelector("#submitLoaButton");
+const loaQueue = document.querySelector("#loaQueue");
+const unitTreeContainer = document.querySelector("#unitTreeContainer");
+const unitSummaryList = document.querySelector("#unitSummaryList");
+const supportForm = document.querySelector("#supportForm");
+const supportTitle = document.querySelector("#supportTitle");
+const supportCategory = document.querySelector("#supportCategory");
+const supportSeverity = document.querySelector("#supportSeverity");
+const supportSummary = document.querySelector("#supportSummary");
+const supportDescription = document.querySelector("#supportDescription");
+const supportFormFeedback = document.querySelector("#supportFormFeedback");
+const submitSupportButton = document.querySelector("#submitSupportButton");
+const supportRows = document.querySelector("#supportRows");
 const flagTrainingButton = document.querySelector("#flagTrainingButton");
 const recommendPromotionButton = document.querySelector("#recommendPromotionButton");
 const auditRows = document.querySelector("#auditRows");
@@ -116,6 +135,12 @@ let dashboardSummary = null;
 let dashboardSummaryError = "";
 let auditLog = [];
 let auditLoadError = "";
+let loaRequests = [];
+let loaLoadError = "";
+let unitsData = null;
+let unitsLoadError = "";
+let supportTickets = [];
+let supportLoadError = "";
 
 let currentView = "dashboard";
 let selectedApplicationId = null;
@@ -165,6 +190,8 @@ Object.entries(applicationFieldMap).forEach(([key, field]) => {
 });
 personnelSearch.addEventListener("input", renderPersonnel);
 personnelStatusFilter.addEventListener("change", renderPersonnel);
+loaForm?.addEventListener("submit", submitLoaForm);
+supportForm?.addEventListener("submit", submitSupportForm);
 
 markContactedButton.addEventListener("click", () => updateSelectedApplication("Contacted", "Applicant marked contacted"));
 acceptApplicantButton.addEventListener("click", () => updateSelectedApplication("Accepted", "Applicant accepted and recruit conversion queued"));
@@ -194,7 +221,7 @@ async function initPortal() {
     activeAccessRole = deriveAccessRole(currentUser);
     updateSessionSummary();
     applyRole();
-    await Promise.all([loadDashboardSummary(), loadApplications(), loadPersonnel(), loadAuditLogs()]);
+    await Promise.all([loadDashboardSummary(), loadApplications(), loadPersonnel(), loadLoaRequests(), loadUnits(), loadSupportTickets(), loadAuditLogs()]);
     renderAllRecords();
     setView(currentView);
 
@@ -253,6 +280,9 @@ function renderAllRecords() {
   renderApplications();
   renderPersonnel();
   renderProfileView();
+  renderLoaRequests();
+  renderUnits();
+  renderSupportTickets();
   renderAudit();
 }
 
@@ -506,6 +536,59 @@ async function loadPersonnel() {
   renderPersonnel();
 }
 
+async function loadLoaRequests() {
+  if (!loaQueue) return;
+
+  loaLoadError = "";
+  loaQueue.innerHTML = `<p class="section-note">Loading LOA records...</p>`;
+
+  try {
+    const response = await fetchJson("/api/loa?limit=100");
+    loaRequests = response.items || [];
+  } catch (error) {
+    console.error(error);
+    loaRequests = [];
+    loaLoadError = error.message || "Unable to load LOA records.";
+  }
+
+  renderLoaRequests();
+}
+
+async function loadUnits() {
+  if (!unitTreeContainer) return;
+
+  unitsLoadError = "";
+  unitTreeContainer.innerHTML = `<p class="panel-copy">Loading unit hierarchy...</p>`;
+
+  try {
+    unitsData = await fetchJson("/api/units");
+  } catch (error) {
+    console.error(error);
+    unitsData = null;
+    unitsLoadError = error.message || "Unable to load units.";
+  }
+
+  renderUnits();
+}
+
+async function loadSupportTickets() {
+  if (!supportRows) return;
+
+  supportLoadError = "";
+  supportRows.innerHTML = `<tr><td colspan="5">Loading support tickets...</td></tr>`;
+
+  try {
+    const response = await fetchJson("/api/support?limit=100");
+    supportTickets = response.items || [];
+  } catch (error) {
+    console.error(error);
+    supportTickets = [];
+    supportLoadError = error.message || "Unable to load support tickets.";
+  }
+
+  renderSupportTickets();
+}
+
 function renderApplicationDetail() {
   const application = selectedApplication();
   const role = activeAccessRole;
@@ -699,6 +782,206 @@ function renderProfileView() {
 
   profileDetailStatus.textContent = member.statusLabel;
   profileDetail.innerHTML = personnelDetailMarkup(member);
+}
+
+function renderLoaRequests() {
+  if (!loaQueue) return;
+
+  if (loaLoadError) {
+    loaQueue.innerHTML = `<p class="section-note">${escapeHtml(loaLoadError)}</p>`;
+    return;
+  }
+
+  if (!loaRequests.length) {
+    loaQueue.innerHTML = `<p class="section-note">No LOA requests have been submitted yet.</p>`;
+    return;
+  }
+
+  const canReview = ["staff", "command", "system"].includes(activeAccessRole) || hasPermission("personnel:write");
+  loaQueue.innerHTML = loaRequests
+    .map((record) => {
+      const buttons = canReview
+        ? `<div class="action-row">
+            <button class="button" type="button" data-loa-action="approve" data-loa-id="${escapeHtml(record.id)}">Approve</button>
+            <button class="button danger" type="button" data-loa-action="deny" data-loa-id="${escapeHtml(record.id)}">Deny</button>
+            <button class="button ghost" type="button" data-loa-action="return" data-loa-id="${escapeHtml(record.id)}">Mark Returned</button>
+          </div>`
+        : "";
+      return `
+        <article>
+          <strong>${escapeHtml(record.member)} | ${escapeHtml(record.rank)}</strong>
+          <span>${escapeHtml(record.unit)} | ${escapeHtml(record.billet)}</span>
+          <span>${escapeHtml(formatDate(record.startDate))} to ${escapeHtml(formatDate(record.endDate))}</span>
+          <span>${escapeHtml(record.reasonCategory)} | ${escapeHtml(record.status)}</span>
+          <span>${escapeHtml(record.details || "No additional details provided.")}</span>
+          ${buttons}
+        </article>
+      `;
+    })
+    .join("");
+
+  loaQueue.querySelectorAll("[data-loa-action]").forEach((button) => {
+    button.addEventListener("click", () => reviewLoa(button.dataset.loaId, button.dataset.loaAction));
+  });
+}
+
+function renderUnits() {
+  if (!unitTreeContainer || !unitSummaryList) return;
+
+  if (unitsLoadError) {
+    unitTreeContainer.innerHTML = `<p class="panel-copy">${escapeHtml(unitsLoadError)}</p>`;
+    unitSummaryList.innerHTML = `<p class="section-note">${escapeHtml(unitsLoadError)}</p>`;
+    return;
+  }
+
+  const items = unitsData?.items || [];
+  const roots = unitsData?.roots || [];
+  const byParent = new Map();
+
+  items.forEach((item) => {
+    const key = item.parentId || "__root__";
+    const list = byParent.get(key) || [];
+    list.push(item);
+    byParent.set(key, list);
+  });
+
+  const renderNode = (unitId) => {
+    const unit = items.find((item) => item.id === unitId);
+    if (!unit) return "";
+    const children = byParent.get(unit.id) || [];
+    return `
+      <li>
+        <strong>${escapeHtml(unit.name)}</strong>
+        <span class="muted">${escapeHtml(unit.type)} | ${formatCount(unit.personnelCount)} personnel | ${formatCount(unit.billets.length)} billets</span>
+        ${children.length ? `<ul>${children.map((child) => renderNode(child.id)).join("")}</ul>` : ""}
+      </li>
+    `;
+  };
+
+  unitTreeContainer.innerHTML = roots.length ? `<ul>${roots.map((rootId) => renderNode(rootId)).join("")}</ul>` : `<p class="panel-copy">No units have been seeded yet.</p>`;
+
+  const topUnits = [...items].sort((left, right) => right.personnelCount - left.personnelCount).slice(0, 6);
+  unitSummaryList.innerHTML = topUnits.length
+    ? topUnits
+        .map(
+          (unit) => `
+            <article>
+              <strong>${escapeHtml(unit.name)}</strong>
+              <span>${formatCount(unit.personnelCount)} personnel | ${formatCount(unit.childCount)} child units | ${formatCount(unit.billets.length)} billets</span>
+            </article>
+          `,
+        )
+        .join("")
+    : `<p class="section-note">No unit summary is available yet.</p>`;
+}
+
+function renderSupportTickets() {
+  if (!supportRows) return;
+
+  if (supportLoadError) {
+    supportRows.innerHTML = `<tr><td colspan="5">${escapeHtml(supportLoadError)}</td></tr>`;
+    return;
+  }
+
+  supportRows.innerHTML = supportTickets.length
+    ? supportTickets
+        .map(
+          (ticket) => `
+            <tr>
+              <td><strong>${escapeHtml(ticket.title)}</strong><br><span class="muted">${escapeHtml(ticket.summary)}</span></td>
+              <td>${escapeHtml(ticket.category)}</td>
+              <td>${statusPill(ticket.severity)}</td>
+              <td>${statusPill(ticket.status)}</td>
+              <td>${escapeHtml(ticket.assignedToId || "Unassigned")}</td>
+            </tr>
+          `,
+        )
+        .join("")
+    : `<tr><td colspan="5">No support or bug report records have been created yet.</td></tr>`;
+}
+
+async function submitLoaForm(event) {
+  event.preventDefault();
+  if (!submitLoaButton) return;
+
+  submitLoaButton.disabled = true;
+  setLoaFeedback("", "");
+
+  try {
+    const response = await fetchJson("/api/loa", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        startDate: loaStartDate?.value,
+        endDate: loaEndDate?.value,
+        reasonCategory: loaReasonCategory?.value,
+        details: loaDetails?.value,
+      }),
+    });
+    loaRequests = [response.item, ...loaRequests.filter((record) => record.id !== response.item.id)];
+    renderLoaRequests();
+    await Promise.all([loadDashboardSummary(), loadPersonnel()]);
+    setLoaFeedback("LOA request submitted.", "success");
+    showToast("LOA submitted.");
+  } catch (error) {
+    console.error(error);
+    setLoaFeedback(error.message || "Unable to submit LOA request.", "error");
+  } finally {
+    submitLoaButton.disabled = false;
+  }
+}
+
+async function reviewLoa(loaId, action) {
+  const mappedStatus = action === "approve" ? "Approved" : action === "deny" ? "Denied" : "Returned";
+  try {
+    const response = await fetchJson(`/api/loa/${encodeURIComponent(loaId)}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: mappedStatus,
+        reason: `Portal LOA review action: ${mappedStatus}.`,
+      }),
+    });
+    loaRequests = loaRequests.map((record) => (record.id === response.item.id ? response.item : record));
+    renderLoaRequests();
+    await Promise.all([loadDashboardSummary(), loadPersonnel(), loadAuditLogs()]);
+    showToast(`LOA ${mappedStatus.toLowerCase()}.`);
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Unable to review LOA.");
+  }
+}
+
+async function submitSupportForm(event) {
+  event.preventDefault();
+  if (!submitSupportButton) return;
+
+  submitSupportButton.disabled = true;
+  setSupportFeedback("", "");
+
+  try {
+    const response = await fetchJson("/api/support", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: supportTitle?.value,
+        category: supportCategory?.value,
+        severity: supportSeverity?.value,
+        summary: supportSummary?.value,
+        description: supportDescription?.value,
+      }),
+    });
+    supportTickets = [response.item, ...supportTickets.filter((ticket) => ticket.id !== response.item.id)];
+    renderSupportTickets();
+    await loadDashboardSummary();
+    setSupportFeedback("Support ticket submitted.", "success");
+    showToast("Support ticket submitted.");
+  } catch (error) {
+    console.error(error);
+    setSupportFeedback(error.message || "Unable to submit support ticket.", "error");
+  } finally {
+    submitSupportButton.disabled = false;
+  }
 }
 
 function renderAudit() {
@@ -1265,6 +1548,26 @@ function setApplicationFeedback(message, state) {
   applicationFormFeedback.classList.remove("error", "success");
   if (state) {
     applicationFormFeedback.classList.add(state);
+  }
+}
+
+function setLoaFeedback(message, state) {
+  if (!loaFormFeedback) return;
+
+  loaFormFeedback.textContent = message;
+  loaFormFeedback.classList.remove("error", "success");
+  if (state) {
+    loaFormFeedback.classList.add(state);
+  }
+}
+
+function setSupportFeedback(message, state) {
+  if (!supportFormFeedback) return;
+
+  supportFormFeedback.textContent = message;
+  supportFormFeedback.classList.remove("error", "success");
+  if (state) {
+    supportFormFeedback.classList.add(state);
   }
 }
 

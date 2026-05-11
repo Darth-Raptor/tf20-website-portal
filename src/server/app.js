@@ -15,6 +15,31 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "../..");
 
+function createSimpleRateLimiter({ windowMs, limit, message, keyPrefix }) {
+  const hits = new Map();
+
+  return (req, res, next) => {
+    const key = `${keyPrefix}:${req.ip || "unknown"}`;
+    const now = Date.now();
+    const entry = hits.get(key);
+
+    if (!entry || entry.expiresAt <= now) {
+      hits.set(key, { count: 1, expiresAt: now + windowMs });
+      next();
+      return;
+    }
+
+    if (entry.count >= limit) {
+      res.status(429).json({ error: message });
+      return;
+    }
+
+    entry.count += 1;
+    hits.set(key, entry);
+    next();
+  };
+}
+
 export function createApp() {
   validateConfig();
 
@@ -49,6 +74,19 @@ export function createApp() {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  const loginRateLimit = createSimpleRateLimiter({
+    windowMs: 5 * 60 * 1000,
+    limit: 20,
+    message: "Too many login attempts. Please wait a few minutes and try again.",
+    keyPrefix: "login",
+  });
+  const writeRateLimit = createSimpleRateLimiter({
+    windowMs: 60 * 1000,
+    limit: 80,
+    message: "Too many write requests. Slow down and try again shortly.",
+    keyPrefix: "writes",
+  });
+
   app.use("/assets", express.static(path.join(projectRoot, "assets"), { immutable: true, maxAge: "1d" }));
   app.get("/favicon.ico", (req, res) => {
     res.type("png").sendFile(path.join(projectRoot, "assets", "tf20-favicon.png"));
@@ -56,6 +94,15 @@ export function createApp() {
   app.get("/styles.css", (req, res) => res.sendFile(path.join(projectRoot, "styles.css")));
   app.get("/portal.css", (req, res) => res.sendFile(path.join(projectRoot, "portal.css")));
   app.get("/portal.js", (req, res) => res.sendFile(path.join(projectRoot, "portal.js")));
+  app.use("/login", loginRateLimit);
+  app.use("/auth/discord/callback", loginRateLimit);
+  app.use("/api", (req, res, next) => {
+    if (["POST", "PATCH", "PUT", "DELETE"].includes(req.method)) {
+      writeRateLimit(req, res, next);
+      return;
+    }
+    next();
+  });
 
   app.use("/", pageRouter(projectRoot));
   app.use("/api", apiRouter());

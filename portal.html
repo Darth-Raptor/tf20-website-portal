@@ -166,10 +166,10 @@
             <section class="panel">
               <div class="panel-heading">
                 <h2>Profile Authority</h2>
-                <span>Staff managed</span>
+                <span>Request and approval</span>
               </div>
               <p class="panel-copy">
-                Member profile fields are read-only. Display alias, timezone, Steam identity, rank, unit, billet, and staff assignments are set at enlistment or by authorized staff.
+                Members cannot directly edit profile fields in the portal. Display alias, timezone, Steam identity, rank, unit, billet, and staff assignments must be requested and approved through staff or support workflow.
               </p>
             </section>
           </div>
@@ -367,78 +367,18 @@
                 <h2>Editable Unit Tree</h2>
                 <span>Line units and staff sections stay separate</span>
               </div>
-              <div class="unit-tree">
-                <ul>
-                  <li>Task Force 20
-                    <ul>
-                      <li>Task Force 20 HHC
-                        <ul>
-                          <li>Commanding Officer</li>
-                          <li>Executive Officer</li>
-                          <li>NCOIC</li>
-                          <li>A Co, 1/75th Ranger Regiment
-                            <ul>
-                              <li>Commanding Officer</li>
-                              <li>Executive Officer</li>
-                              <li>1st Platoon
-                                <ul>
-                                  <li>1st Platoon Leader</li>
-                                  <li>1st Platoon Sergeant</li>
-                                  <li>1st Squad
-                                    <ul>
-                                      <li>1st Squad Leader</li>
-                                      <li>A Team Leader</li>
-                                      <li>B Team Leader</li>
-                                    </ul>
-                                  </li>
-                                  <li>2nd Squad
-                                    <ul>
-                                      <li>2nd Squad Leader</li>
-                                      <li>A Team Leader</li>
-                                      <li>B Team Leader</li>
-                                    </ul>
-                                  </li>
-                                </ul>
-                              </li>
-                            </ul>
-                          </li>
-                          <li>1 Troop, A Squadron, 1st SFOD-Delta
-                            <ul>
-                              <li>A Team
-                                <ul>
-                                  <li>A Team Leader</li>
-                                  <li>A Assistant Team Leader</li>
-                                </ul>
-                              </li>
-                              <li>B Team
-                                <ul>
-                                  <li>B Team Leader</li>
-                                  <li>B Assistant Team Leader</li>
-                                </ul>
-                              </li>
-                            </ul>
-                          </li>
-                        </ul>
-                      </li>
-                      <li>Recruit Holding / Training Pipeline</li>
-                      <li>B Co, 2/160th SOAR</li>
-                    </ul>
-                  </li>
-                </ul>
+              <div class="unit-tree" id="unitTreeContainer">
+                <p class="panel-copy">Loading unit hierarchy...</p>
               </div>
             </section>
 
             <section class="panel">
               <div class="panel-heading">
-                <h2>S-Shops</h2>
-                <span>Functional assignments</span>
+                <h2>Live Unit Summary</h2>
+                <span>Roster-backed counts</span>
               </div>
-              <div class="queue-list">
-                <article><strong>S1 Personnel</strong><span>Records, LOA, promotions, awards, discharges, attendance review.</span></article>
-                <article><strong>S2 Intelligence</strong><span>Intel documents, campaign summaries, target packages, briefings.</span></article>
-                <article><strong>S3 Operations</strong><span>Operations calendar, training oversight, OPORD links, tasking.</span></article>
-                <article><strong>S4 Supply</strong><span>Supply requests, equipment, loadout resources, logistics forms.</span></article>
-                <article><strong>S6 IT / Systems</strong><span>Discord, website, server information, modpack, bug reports, RCON.</span></article>
+              <div class="queue-list" id="unitSummaryList">
+                <p class="section-note">Loading unit summary...</p>
               </div>
             </section>
 
@@ -559,15 +499,19 @@
                 <h2>Submit LOA</h2>
                 <span>Member workflow</span>
               </div>
-              <form class="stack-form">
-                <label>Start Date <input type="date" /></label>
-                <label>End Date <input type="date" /></label>
+              <form class="stack-form" id="loaForm">
+                <label>Start Date <input id="loaStartDate" name="startDate" type="date" /></label>
+                <label>End Date <input id="loaEndDate" name="endDate" type="date" /></label>
                 <label>Reason Category
-                  <select>
+                  <select id="loaReasonCategory" name="reasonCategory">
                     <option>Work</option><option>School</option><option>Family</option><option>Health / Personal</option><option>Military / Real-World Duty</option><option>Technical Issue</option><option>Temporary Burnout</option><option>Other</option>
                   </select>
                 </label>
-                <label>Details <textarea rows="4" placeholder="Do not over-collect private details."></textarea></label>
+                <label>Details <textarea id="loaDetails" name="details" rows="4" placeholder="Do not over-collect private details."></textarea></label>
+                <p class="form-feedback" id="loaFormFeedback" role="status" aria-live="polite"></p>
+                <div class="action-row">
+                  <button class="button primary" type="submit" id="submitLoaButton">Submit LOA</button>
+                </div>
               </form>
             </section>
 
@@ -576,8 +520,8 @@
                 <h2>LOA Queue</h2>
                 <span>S1 / delegated leadership</span>
               </div>
-              <div class="queue-list">
-                <p class="section-note">No LOA request records are connected yet.</p>
+              <div class="queue-list" id="loaQueue">
+                <p class="section-note">Loading LOA records...</p>
               </div>
             </section>
           </div>
@@ -623,6 +567,51 @@
 
         <section class="view" data-view-panel="support">
           <div class="section-grid">
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Submit Support Ticket</h2>
+                <span>Member self-service</span>
+              </div>
+              <form class="stack-form" id="supportForm">
+                <label>
+                  Title
+                  <input id="supportTitle" name="title" type="text" maxlength="160" placeholder="Short issue title" />
+                </label>
+                <label>
+                  Category
+                  <select id="supportCategory" name="category">
+                    <option value="Website">Website</option>
+                    <option value="Portal">Portal</option>
+                    <option value="Discord">Discord</option>
+                    <option value="Modpack">Modpack</option>
+                    <option value="Game Server">Game Server</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
+                <label>
+                  Severity
+                  <select id="supportSeverity" name="severity">
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Critical">Critical</option>
+                  </select>
+                </label>
+                <label>
+                  Summary
+                  <textarea id="supportSummary" name="summary" rows="3" placeholder="What is going wrong?"></textarea>
+                </label>
+                <label>
+                  Details
+                  <textarea id="supportDescription" name="description" rows="4" placeholder="Steps to reproduce, expected behavior, or supporting details"></textarea>
+                </label>
+                <p class="form-feedback" id="supportFormFeedback" role="status" aria-live="polite"></p>
+                <div class="action-row">
+                  <button class="button primary" type="submit" id="submitSupportButton">Submit Ticket</button>
+                </div>
+              </form>
+            </section>
+
             <section class="panel wide">
               <div class="panel-heading">
                 <h2>Bug Report / Support Queue</h2>
@@ -639,9 +628,7 @@
                       <th>Assigned</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    <tr><td colspan="5">No support or bug report records have been created yet.</td></tr>
-                  </tbody>
+                  <tbody id="supportRows"></tbody>
                 </table>
               </div>
             </section>

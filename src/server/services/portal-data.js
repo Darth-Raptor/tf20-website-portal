@@ -28,6 +28,8 @@ const accountStatuses = new Set([
 ]);
 
 const auditSeverities = new Set(["Info", "ActionRequired", "Warning", "Critical"]);
+const loaStatuses = new Set(["Submitted", "Approved", "Denied", "Returned", "Cancelled"]);
+const supportSeverities = new Set(["Low", "Medium", "High", "Critical"]);
 const activeApplicationStatuses = [
   "Draft",
   "Submitted",
@@ -79,6 +81,16 @@ const personnelProfileInclude = {
 function normalizeText(value, maxLength = 1000) {
   const normalized = String(value ?? "").trim();
   return normalized.length > maxLength ? normalized.slice(0, maxLength) : normalized;
+}
+
+function currentTimestamp() {
+  return new Date();
+}
+
+function normalizeDate(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function assertCanReadApplication(user, application) {
@@ -779,6 +791,517 @@ export async function getPortalSummary({ actorUser } = {}) {
         : null,
     },
   };
+}
+
+export async function updatePersonnelProfile({
+  actorUser,
+  profileId,
+  primaryUnitId,
+  primaryBilletId,
+  primaryMos,
+  status,
+  goodStanding,
+  staffSectionIds,
+  reason,
+  ipSessionMetadata,
+}) {
+  assertDatabaseReady();
+  await assertCanAccessPersonnelProfile(actorUser, profileId);
+
+  const db = getDb();
+  const profile = await db.personnelProfile.findUnique({
+    where: { id: profileId },
+    include: {
+      user: { select: { id: true, accountStatus: true } },
+      primaryUnit: { select: { id: true, name: true } },
+      primaryBillet: { select: { id: true, name: true } },
+      staffAssignments: {
+        where: { endDate: null },
+        include: { staffSection: true },
+      },
+    },
+  });
+
+  if (!profile) {
+    const error = new Error("Personnel profile not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const nextStatus = status && accountStatuses.has(status) ? status : profile.currentStatus;
+  const nextPrimaryMos = normalizeText(primaryMos, 160) || null;
+  const nextGoodStanding = typeof goodStanding === "boolean" ? goodStanding : profile.goodStanding;
+  const nextStaffSectionIds = Array.isArray(staffSectionIds)
+    ? [...new Set(staffSectionIds.map((value) => String(value).trim()).filter(Boolean))]
+    : profile.staffAssignments.map((assignment) => assignment.staffSectionId);
+
+  if (primaryUnitId) {
+    const unit = await db.unit.findUnique({ where: { id: primaryUnitId }, select: { id: true } });
+    if (!unit) {
+      const error = new Error("Primary unit not found.");
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  if (primaryBilletId) {
+    const billet = await db.billet.findUnique({ where: { id: primaryBilletId }, select: { id: true } });
+    if (!billet) {
+      const error = new Error("Primary billet not found.");
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  if (nextStaffSectionIds.length) {
+    const sectionCount = await db.staffSection.count({
+      where: { id: { in: nextStaffSectionIds } },
+    });
+    if (sectionCount !== nextStaffSectionIds.length) {
+      const error = new Error("One or more staff sections are invalid.");
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  const auditReason = normalizeText(reason, 1000) || "Updated personnel profile from the portal.";
+
+  await db.$transaction(async (tx) => {
+    await tx.personnelProfile.update({
+      where: { id: profileId },
+      data: {
+        primaryUnitId: primaryUnitId ?? profile.primaryUnitId,
+        primaryBilletId: primaryBilletId ?? profile.primaryBilletId,
+        primaryMos: nextPrimaryMos,
+        currentStatus: nextStatus,
+        goodStanding: nextGoodStanding,
+      },
+    });
+
+    await tx.user.update({
+      where: { id: profile.userId },
+      data: { accountStatus: nextStatus },
+    });
+
+    await tx.staffAssignment.updateMany({
+      where: { profileId, endDate: null },
+      data: { endDate: currentTimestamp(), reason: auditReason },
+    });
+
+    for (const staffSectionId of nextStaffSectionIds) {
+      await tx.staffAssignment.create({
+        data: {
+          profileId,
+          staffSectionId,
+          effectiveDate: currentTimestamp(),
+          assignmentType: "StaffAssignment",
+          assignedByUserId: actorUser?.id,
+          reason: auditReason,
+        },
+      });
+    }
+
+    await tx.auditLog.create({
+      data: {
+        actorUserId: actorUser?.id,
+        affectedProfileId: profileId,
+        module: "Personnel",
+        action: "Updated Personnel Profile",
+        oldValue: {
+          primaryUnitId: profile.primaryUnitId,
+          primaryBilletId: profile.primaryBilletId,
+          primaryMos: profile.primaryMos,
+          currentStatus: profile.currentStatus,
+          goodStanding: profile.goodStanding,
+          staffSectionIds: profile.staffAssignments.map((assignment) => assignment.staffSectionId),
+        },
+        newValue: {
+          primaryUnitId: primaryUnitId ?? profile.primaryUnitId,
+          primaryBilletId: primaryBilletId ?? profile.primaryBilletId,
+          primaryMos: nextPrimaryMos,
+          currentStatus: nextStatus,
+          goodStanding: nextGoodStanding,
+          staffSectionIds: nextStaffSectionIds,
+        },
+        reason: auditReason,
+        severity: "Info",
+        systemGenerated: false,
+        ipSessionMetadata,
+      },
+    });
+  });
+
+  const updated = await getDb().personnelProfile.findUnique({
+    where: { id: profileId },
+    include: personnelProfileInclude,
+  });
+
+  return updated ? toPersonnelItem(updated) : null;
+}
+
+export async function listLoaRequests({ actorUser, limit = 50, status } = {}) {
+  assertDatabaseReady();
+
+  const statusWhere = status && loaStatuses.has(status) ? { status } : {};
+
+  const canReadAll =
+    hasFullPersonnelAccess(actorUser) ||
+    actorUser?.permissions?.includes("personnel:read") ||
+    actorUser?.roles?.some((role) => ["staff", "command-staff", "system-admin"].includes(role));
+
+  let where;
+  if (!canReadAll) {
+    const ownProfileId = actorUser?.profile?.id;
+    where = mergeWhere(statusWhere, { profileId: ownProfileId || "__no_profile__" });
+  } else {
+    const accessWhere = await personnelAccessWhere(actorUser);
+    where = mergeWhere(statusWhere, {
+      profile: {
+        is: accessWhere,
+      },
+    });
+  }
+
+  const records = await getDb().lOARequest.findMany({
+    where,
+    take: limit,
+    orderBy: [{ submittedAt: "desc" }],
+    include: {
+      profile: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              discordUsername: true,
+              discordDisplayName: true,
+              displayAlias: true,
+            },
+          },
+          currentRank: true,
+          primaryUnit: true,
+          primaryBillet: true,
+        },
+      },
+    },
+  });
+
+  return records.map((record) => ({
+    id: record.id,
+    profileId: record.profileId,
+    member: displayUser(record.profile?.user),
+    rank: record.profile?.currentRank?.abbreviation || "Unranked",
+    unit: record.profile?.primaryUnit?.name || "Unassigned",
+    billet: record.profile?.primaryBillet?.name || "Missing",
+    startDate: record.startDate,
+    endDate: record.endDate,
+    reasonCategory: record.reasonCategory,
+    details: record.details,
+    status: record.status,
+    submittedAt: record.submittedAt,
+    reviewedById: record.reviewedById,
+    decisionDate: record.decisionDate,
+    leadershipComment: record.leadershipComment,
+    s1Notes: record.s1Notes,
+    returnConfirmed: record.returnConfirmed,
+  }));
+}
+
+export async function submitLoaRequest({
+  actorUser,
+  startDate,
+  endDate,
+  reasonCategory,
+  details,
+  ipSessionMetadata,
+}) {
+  assertDatabaseReady();
+
+  const profileId = actorUser?.profile?.id;
+  if (!profileId) {
+    const error = new Error("A linked personnel profile is required before you can submit LOA.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const parsedStart = normalizeDate(startDate);
+  const parsedEnd = normalizeDate(endDate);
+  if (!parsedStart || !parsedEnd || parsedEnd < parsedStart) {
+    const error = new Error("LOA start and end dates must be valid, and end date must be on or after start date.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const category = normalizeText(reasonCategory, 80);
+  if (!category) {
+    const error = new Error("LOA reason category is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const record = await getDb().$transaction(async (tx) => {
+    const created = await tx.lOARequest.create({
+      data: {
+        profileId,
+        startDate: parsedStart,
+        endDate: parsedEnd,
+        reasonCategory: category,
+        details: normalizeText(details, 2000) || null,
+        status: "Submitted",
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        actorUserId: actorUser?.id,
+        affectedProfileId: profileId,
+        module: "LOA",
+        action: "Submitted LOA Request",
+        newValue: {
+          startDate: parsedStart,
+          endDate: parsedEnd,
+          reasonCategory: category,
+          status: "Submitted",
+        },
+        reason: "Member submitted LOA request.",
+        relatedRecordId: created.id,
+        severity: "Info",
+        systemGenerated: false,
+        ipSessionMetadata,
+      },
+    });
+
+    return created;
+  });
+
+  return (await listLoaRequests({ actorUser, limit: 100 })).find((item) => item.id === record.id);
+}
+
+export async function reviewLoaRequest({
+  actorUser,
+  loaRequestId,
+  status,
+  leadershipComment,
+  s1Notes,
+  reason,
+  ipSessionMetadata,
+}) {
+  assertDatabaseReady();
+
+  if (!["Approved", "Denied", "Returned"].includes(status)) {
+    const error = new Error("LOA review status must be Approved, Denied, or Returned.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const db = getDb();
+  const record = await db.lOARequest.findUnique({
+    where: { id: loaRequestId },
+    include: {
+      profile: true,
+    },
+  });
+
+  if (!record) {
+    const error = new Error("LOA request not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  await assertCanAccessPersonnelProfile(actorUser, record.profileId);
+  const reviewReason = normalizeText(reason, 1000) || `LOA request ${status.toLowerCase()} from the portal.`;
+
+  await db.$transaction(async (tx) => {
+    await tx.lOARequest.update({
+      where: { id: loaRequestId },
+      data: {
+        status,
+        reviewedById: actorUser?.id,
+        decisionDate: currentTimestamp(),
+        leadershipComment: normalizeText(leadershipComment, 2000) || null,
+        s1Notes: normalizeText(s1Notes, 2000) || null,
+        returnConfirmed: status === "Returned",
+      },
+    });
+
+    if (status === "Approved") {
+      await tx.personnelProfile.update({
+        where: { id: record.profileId },
+        data: { currentStatus: "LeaveOfAbsence" },
+      });
+      await tx.user.update({
+        where: { id: record.profile.userId },
+        data: { accountStatus: "LeaveOfAbsence" },
+      });
+    }
+
+    if (status === "Returned" && record.profile.currentStatus === "LeaveOfAbsence") {
+      await tx.personnelProfile.update({
+        where: { id: record.profileId },
+        data: { currentStatus: "Active" },
+      });
+      await tx.user.update({
+        where: { id: record.profile.userId },
+        data: { accountStatus: "Active" },
+      });
+    }
+
+    await tx.auditLog.create({
+      data: {
+        actorUserId: actorUser?.id,
+        affectedProfileId: record.profileId,
+        module: "LOA",
+        action: `Reviewed LOA Request: ${status}`,
+        oldValue: { status: record.status },
+        newValue: { status },
+        reason: reviewReason,
+        relatedRecordId: loaRequestId,
+        severity: status === "Denied" ? "Warning" : "Info",
+        systemGenerated: false,
+        ipSessionMetadata,
+      },
+    });
+  });
+
+  return (await listLoaRequests({ actorUser, limit: 100 })).find((item) => item.id === loaRequestId);
+}
+
+export async function listUnits({ actorUser } = {}) {
+  assertDatabaseReady();
+  const db = getDb();
+  const units = await db.unit.findMany({
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    include: {
+      billets: {
+        orderBy: { name: "asc" },
+        include: { category: true },
+      },
+      _count: {
+        select: {
+          children: true,
+          profiles: true,
+        },
+      },
+    },
+  });
+
+  const byParent = new Map();
+  for (const unit of units) {
+    const key = unit.parentId || "__root__";
+    const items = byParent.get(key) || [];
+    items.push(unit);
+    byParent.set(key, items);
+  }
+
+  const unitItems = units.map((unit) => ({
+    id: unit.id,
+    parentId: unit.parentId,
+    name: unit.name,
+    type: unit.type,
+    sortOrder: unit.sortOrder,
+    personnelCount: unit._count.profiles,
+    childCount: unit._count.children,
+    billets: unit.billets.map((billet) => ({
+      id: billet.id,
+      name: billet.name,
+      category: billet.category?.name || "Uncategorized",
+    })),
+  }));
+
+  return {
+    items: unitItems,
+    roots: (byParent.get("__root__") || []).map((unit) => unit.id),
+    visibility: actorUser?.access?.personnelScope || "self",
+  };
+}
+
+export async function listBugReports({ actorUser, limit = 50 } = {}) {
+  assertDatabaseReady();
+
+  const canReadAll =
+    actorUser?.permissions?.includes("system:admin") ||
+    actorUser?.roles?.some((role) => ["staff", "command-staff", "system-admin"].includes(role));
+
+  const records = await getDb().bugReport.findMany({
+    where: canReadAll ? {} : { submittedById: actorUser?.id || "__no_user__" },
+    take: limit,
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+  });
+
+  return records.map((record) => ({
+    id: record.id,
+    title: record.title,
+    category: record.category,
+    severity: record.severity,
+    status: record.status,
+    summary: record.summary,
+    description: record.description,
+    submittedById: record.submittedById,
+    assignedToId: record.assignedToId,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  }));
+}
+
+export async function submitBugReport({
+  actorUser,
+  title,
+  category,
+  severity,
+  summary,
+  description,
+  ipSessionMetadata,
+}) {
+  assertDatabaseReady();
+
+  const cleanedTitle = normalizeText(title, 160);
+  const cleanedCategory = normalizeText(category, 80);
+  const cleanedSeverity = normalizeText(severity, 40);
+  const cleanedSummary = normalizeText(summary, 1000);
+  const cleanedDescription = normalizeText(description, 4000);
+
+  if (!cleanedTitle || !cleanedCategory || !cleanedSummary) {
+    const error = new Error("Title, category, and summary are required for support submissions.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const resolvedSeverity = supportSeverities.has(cleanedSeverity) ? cleanedSeverity : "Medium";
+  const record = await getDb().$transaction(async (tx) => {
+    const created = await tx.bugReport.create({
+      data: {
+        title: cleanedTitle,
+        category: cleanedCategory,
+        severity: resolvedSeverity,
+        status: "Open",
+        summary: cleanedSummary,
+        description: cleanedDescription || null,
+        submittedById: actorUser?.id,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        actorUserId: actorUser?.id,
+        module: "Support",
+        action: "Submitted Bug Report",
+        newValue: {
+          title: cleanedTitle,
+          category: cleanedCategory,
+          severity: resolvedSeverity,
+          status: "Open",
+        },
+        reason: "Portal support submission.",
+        relatedRecordId: created.id,
+        severity: resolvedSeverity === "Critical" ? "ActionRequired" : "Info",
+        systemGenerated: false,
+        ipSessionMetadata,
+      },
+    });
+
+    return created;
+  });
+
+  return (await listBugReports({ actorUser, limit: 100 })).find((item) => item.id === record.id);
 }
 
 export async function listAuditLogs({ limit = 50, actorUser } = {}) {

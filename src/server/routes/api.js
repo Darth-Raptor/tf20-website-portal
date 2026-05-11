@@ -6,12 +6,19 @@ import {
   assertCanAccessPersonnelProfile,
   canAccessPersonnelRoster,
   getPortalSummary,
+  listBugReports,
+  listLoaRequests,
+  listUnits,
   listApplications,
   listAuditLogs,
   getPersonnelForUser,
   listPersonnel,
   parseLimit,
+  reviewLoaRequest,
   submitApplication,
+  submitBugReport,
+  submitLoaRequest,
+  updatePersonnelProfile,
   updateApplicationStatus,
   writeAuditLog,
 } from "../services/portal-data.js";
@@ -190,6 +197,121 @@ export function apiRouter() {
         actorUser: req.user,
       });
       res.json({ items, next: null });
+    }),
+  );
+
+  router.patch(
+    "/personnel/:id",
+    requireAuth,
+    requireRole("personnel:write", "staff", "command", "command-staff", "system-admin"),
+    asyncRoute(async (req, res) => {
+      const item = await updatePersonnelProfile({
+        actorUser: req.user,
+        profileId: req.params.id,
+        primaryUnitId: req.body.primaryUnitId,
+        primaryBilletId: req.body.primaryBilletId,
+        primaryMos: req.body.primaryMos,
+        status: req.body.status,
+        goodStanding: req.body.goodStanding,
+        staffSectionIds: req.body.staffSectionIds,
+        reason: req.body.reason,
+        ipSessionMetadata: {
+          ip: req.ip,
+          userAgent: req.get("user-agent"),
+        },
+      });
+      res.json({ item });
+    }),
+  );
+
+  router.get(
+    "/loa",
+    requireAuth,
+    asyncRoute(async (req, res) => {
+      const items = await listLoaRequests({
+        actorUser: req.user,
+        status: req.query.status,
+        limit: parseLimit(req.query.limit),
+      });
+      res.json({ items, next: null });
+    }),
+  );
+
+  router.post(
+    "/loa",
+    requireAuth,
+    asyncRoute(async (req, res) => {
+      const item = await submitLoaRequest({
+        actorUser: req.user,
+        startDate: req.body.startDate,
+        endDate: req.body.endDate,
+        reasonCategory: req.body.reasonCategory,
+        details: req.body.details,
+        ipSessionMetadata: {
+          ip: req.ip,
+          userAgent: req.get("user-agent"),
+        },
+      });
+      res.status(201).json({ item });
+    }),
+  );
+
+  router.patch(
+    "/loa/:id/status",
+    requireAuth,
+    requireRole("personnel:write", "staff", "command", "command-staff", "system-admin"),
+    asyncRoute(async (req, res) => {
+      const item = await reviewLoaRequest({
+        actorUser: req.user,
+        loaRequestId: req.params.id,
+        status: req.body.status,
+        leadershipComment: req.body.leadershipComment,
+        s1Notes: req.body.s1Notes,
+        reason: req.body.reason,
+        ipSessionMetadata: {
+          ip: req.ip,
+          userAgent: req.get("user-agent"),
+        },
+      });
+      res.json({ item });
+    }),
+  );
+
+  router.get(
+    "/units",
+    requireAuth,
+    asyncRoute(async (req, res) => {
+      const item = await listUnits({ actorUser: req.user });
+      res.json(item);
+    }),
+  );
+
+  router.get(
+    "/support",
+    requireAuth,
+    asyncRoute(async (req, res) => {
+      const items = await listBugReports({ actorUser: req.user, limit: parseLimit(req.query.limit) });
+      res.json({ items, next: null });
+    }),
+  );
+
+  router.post(
+    "/support",
+    requireAuth,
+    asyncRoute(async (req, res) => {
+      const item = await submitBugReport({
+        actorUser: req.user,
+        title: req.body.title,
+        category: req.body.category,
+        severity: req.body.severity,
+        summary: req.body.summary,
+        description: req.body.description,
+        ipSessionMetadata: {
+          ip: req.ip,
+          userAgent: req.get("user-agent"),
+        },
+      });
+      res.status(201).json({ item });
     }),
   );
 
