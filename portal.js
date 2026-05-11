@@ -125,6 +125,42 @@ const titles = {
   audit: "Audit Log",
 };
 
+const unitMosCatalog = {
+  ranger: [
+    "11A Infantry Officer",
+    "11B Infantryman",
+    "11C Indirect Fires Infantryman",
+    "12B Combat Engineer",
+    "13B Cannon Crewmember",
+    "13F Joint Fire Support Specialist",
+    "15W UAS Operator",
+    "25C Radio Operator",
+    "25E Electromagnetic Spectrum Manager",
+    "25U Signal Support Systems Specialist",
+    "35F Intelligence Analyst",
+    "35N Signals Intelligence Analyst",
+    "68W Combat Medic",
+    "74D CBRN Specialist",
+    "91B Wheeled Vehicle Mechanic",
+  ],
+  sfod: [
+    "18A SPECIAL FORCES OFFICER",
+    "180A SPECIAL FORCES WARRANT OFFICER",
+    "18B SPECIAL FORCES WEAPONS SERGEANT",
+    "18C SPECIAL FORCES ENGINEER SERGEANT",
+    "18D SPECIAL FORCES MEDICAL SERGEANT",
+    "18E SPECIAL FORCES COMMUNICATIONS SERGEANT",
+    "18F SPECIAL FORCES INTELLIGENCE SERGEANT",
+    "18Z SPECIAL FORCES OPERATIONS SERGEANT",
+    "18X SPECIAL FORCES CANDIDATE",
+  ],
+  soar: [
+    "153A SPECIAL OPERATIONS ROTARY WING AVIATOR",
+    "15T2FN1 AIR CREW CHIEF",
+    "15W TACTICAL UNMANNED AIR SYSTEMS OPERATOR",
+  ],
+};
+
 const roleAccess = {
   applicant: ["dashboard", "profile", "support"],
   member: ["dashboard", "profile", "loa", "personnel", "units", "events", "training", "support", "audit"],
@@ -229,7 +265,10 @@ Object.entries(applicationFieldMap).forEach(([key, field]) => {
 });
 personnelSearch.addEventListener("input", renderPersonnel);
 personnelStatusFilter.addEventListener("change", renderPersonnel);
-personnelEditUnit?.addEventListener("change", () => syncPersonnelBilletOptions());
+personnelEditUnit?.addEventListener("change", () => {
+  syncPersonnelBilletOptions();
+  syncPersonnelMosOptions();
+});
 personnelEditStatus?.addEventListener("change", syncPersonnelStatusLocks);
 personnelUpdateForm?.addEventListener("submit", submitPersonnelUpdateForm);
 eventForm?.addEventListener("submit", submitEventForm);
@@ -956,7 +995,7 @@ function renderPersonnelEditor() {
 
   populateSelect(personnelEditUnit, unitOptions, member.unitId, "Select primary unit");
   syncPersonnelBilletOptions(member.billetId);
-  personnelEditMos.value = member.primaryMos || "";
+  syncPersonnelMosOptions(member.primaryMos);
   personnelEditStatus.value = member.status || "Active";
   personnelEditGoodStanding.checked = member.goodStanding !== false;
 
@@ -1011,6 +1050,36 @@ function syncPersonnelBilletOptions(selectedBilletId = null) {
     billetOptions,
     selectedValue,
     billetOptions.length ? "Select primary billet" : "No billets for selected unit",
+  );
+}
+
+function syncPersonnelMosOptions(selectedMos = null) {
+  if (!personnelEditMos) return;
+
+  const selectedUnitId = personnelEditUnit?.value || "";
+  const unit = (personnelLookups?.units || []).find((item) => item.id === selectedUnitId);
+  const mosOptions = getMosOptionsForUnitName(unit?.name || "");
+
+  if (!selectedUnitId) {
+    populateSelect(personnelEditMos, [], "", "Select primary unit first");
+    return;
+  }
+
+  let options = mosOptions.map((mos) => ({
+    value: mos,
+    label: mos,
+  }));
+
+  const desiredValue = selectedMos || personnelEditMos.value || "";
+  if (desiredValue && !options.some((option) => option.value === desiredValue)) {
+    options = [{ value: desiredValue, label: `${desiredValue} (current)` }, ...options];
+  }
+
+  populateSelect(
+    personnelEditMos,
+    options,
+    desiredValue,
+    options.length ? "Select primary MOS" : "No MOS list for selected unit",
   );
 }
 
@@ -2119,6 +2188,22 @@ function setAttendanceFeedback(message, state) {
   if (state) {
     attendanceFormFeedback.classList.add(state);
   }
+}
+
+function getMosOptionsForUnitName(unitName) {
+  const name = String(unitName || "");
+
+  if (name.includes("160th SOAR")) {
+    return unitMosCatalog.soar;
+  }
+  if (name.includes("SFOD-Delta") || name === "Task Force 20" || name === "Task Force 20 HHC") {
+    return unitMosCatalog.sfod;
+  }
+  if (name.includes("1/75th RR") || name.includes("1/75th Ranger Regiment")) {
+    return unitMosCatalog.ranger;
+  }
+
+  return [];
 }
 
 function canManageUsers() {
