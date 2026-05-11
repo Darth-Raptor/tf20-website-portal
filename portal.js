@@ -1202,8 +1202,14 @@ function renderLoaRequests() {
         buttons.push(`<button class="button" type="button" data-loa-action="approve" data-loa-id="${escapeHtml(record.id)}">Approve</button>`);
         buttons.push(`<button class="button danger" type="button" data-loa-action="deny" data-loa-id="${escapeHtml(record.id)}">Deny</button>`);
       }
+      if (record.canEditResponded) {
+        buttons.push(`<button class="button ghost" type="button" data-loa-action="edit" data-loa-id="${escapeHtml(record.id)}">Edit</button>`);
+      }
       if (record.canMarkReturned) {
         buttons.push(`<button class="button ghost" type="button" data-loa-action="return" data-loa-id="${escapeHtml(record.id)}">Mark Returned</button>`);
+      }
+      if (record.canWithdraw) {
+        buttons.push(`<button class="button ghost" type="button" data-loa-action="withdraw" data-loa-id="${escapeHtml(record.id)}">Withdraw</button>`);
       }
       return `
         <article>
@@ -1212,6 +1218,8 @@ function renderLoaRequests() {
           <span>${escapeHtml(formatDate(record.startDate))} to ${escapeHtml(formatDate(record.endDate))}</span>
           <span>${escapeHtml(record.reasonCategory)} | ${escapeHtml(record.status)}</span>
           <span>${escapeHtml(record.details || "No additional details provided.")}</span>
+          ${record.leadershipComment ? `<span><strong>Leadership:</strong> ${escapeHtml(record.leadershipComment)}</span>` : ""}
+          ${record.s1Notes ? `<span><strong>S1 Notes:</strong> ${escapeHtml(record.s1Notes)}</span>` : ""}
           ${buttons.length ? `<div class="action-row">${buttons.join("")}</div>` : ""}
         </article>
       `;
@@ -1284,6 +1292,15 @@ async function submitLoaForm(event) {
 }
 
 async function reviewLoa(loaId, action) {
+  if (action === "edit") {
+    await editLoaRequest(loaId);
+    return;
+  }
+  if (action === "withdraw") {
+    await withdrawLoaRequest(loaId);
+    return;
+  }
+
   const mappedStatus = action === "approve" ? "Approved" : action === "deny" ? "Denied" : "Returned";
   try {
     const response = await fetchJson(`/api/loa/${encodeURIComponent(loaId)}/status`, {
@@ -1301,6 +1318,83 @@ async function reviewLoa(loaId, action) {
   } catch (error) {
     console.error(error);
     showToast(error.message || "Unable to review LOA.");
+  }
+}
+
+async function withdrawLoaRequest(loaId) {
+  const record = loaRequests.find((item) => item.id === loaId);
+  if (!record) return;
+
+  const reasonInput = window.prompt("Why is this LOA being withdrawn?", "Member withdrew LOA request.");
+  if (reasonInput === null) return;
+  const reason = reasonInput.trim();
+
+  try {
+    const response = await fetchJson(`/api/loa/${encodeURIComponent(loaId)}/withdraw`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        reason: reason || "Member withdrew LOA request.",
+      }),
+    });
+    loaRequests = loaRequests.map((item) => (item.id === response.item.id ? response.item : item));
+    renderLoaRequests();
+    await Promise.all([loadDashboardSummary(), loadPersonnel(), loadAuditLogs()]);
+    showToast("LOA withdrawn.");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Unable to withdraw LOA.");
+  }
+}
+
+async function editLoaRequest(loaId) {
+  const record = loaRequests.find((item) => item.id === loaId);
+  if (!record) return;
+
+  const startDateInput = window.prompt("Edit LOA start date (YYYY-MM-DD):", record.startDate ? String(record.startDate).slice(0, 10) : "");
+  if (startDateInput === null) return;
+  const endDateInput = window.prompt("Edit LOA end date (YYYY-MM-DD):", record.endDate ? String(record.endDate).slice(0, 10) : "");
+  if (endDateInput === null) return;
+  const reasonCategoryInput = window.prompt("Edit LOA reason category:", record.reasonCategory || "");
+  if (reasonCategoryInput === null) return;
+  const detailsInput = window.prompt("Edit LOA details:", record.details || "");
+  if (detailsInput === null) return;
+  const leadershipCommentInput = window.prompt("Edit leadership comment:", record.leadershipComment || "");
+  if (leadershipCommentInput === null) return;
+  const s1NotesInput = window.prompt("Edit S1 notes:", record.s1Notes || "");
+  if (s1NotesInput === null) return;
+  const reasonInput = window.prompt("Why are you editing this responded LOA?", "Correcting responded LOA record.");
+  if (reasonInput === null) return;
+
+  const startDate = startDateInput.trim();
+  const endDate = endDateInput.trim();
+  const reasonCategory = reasonCategoryInput.trim();
+  const details = detailsInput;
+  const leadershipComment = leadershipCommentInput;
+  const s1Notes = s1NotesInput;
+  const reason = reasonInput.trim();
+
+  try {
+    const response = await fetchJson(`/api/loa/${encodeURIComponent(loaId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        startDate,
+        endDate,
+        reasonCategory,
+        details,
+        leadershipComment,
+        s1Notes,
+        reason: reason || "Correcting responded LOA record.",
+      }),
+    });
+    loaRequests = loaRequests.map((item) => (item.id === response.item.id ? response.item : item));
+    renderLoaRequests();
+    await Promise.all([loadDashboardSummary(), loadPersonnel(), loadAuditLogs()]);
+    showToast("LOA updated.");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Unable to update LOA.");
   }
 }
 

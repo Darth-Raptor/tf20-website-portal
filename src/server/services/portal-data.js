@@ -1074,6 +1074,8 @@ export async function listLoaRequests({ actorUser, limit = 50, status } = {}) {
       returnConfirmed: record.returnConfirmed,
       canApproveDeny: canReview && record.status === "Submitted",
       canMarkReturned: isOwn && record.status === "Approved",
+      canWithdraw: isOwn && !["Returned", "Cancelled"].includes(record.status),
+      canEditResponded: canReview && record.status !== "Submitted",
     });
   }
 
@@ -1245,6 +1247,199 @@ export async function reviewLoaRequest({
         reason: reviewReason,
         relatedRecordId: loaRequestId,
         severity: status === "Denied" ? "Warning" : "Info",
+        systemGenerated: false,
+        ipSessionMetadata,
+      },
+    });
+  });
+
+  return (await listLoaRequests({ actorUser, limit: 100 })).find((item) => item.id === loaRequestId);
+}
+
+export async function withdrawLoaRequest({
+  actorUser,
+  loaRequestId,
+  reason,
+  ipSessionMetadata,
+}) {
+  assertDatabaseReady();
+
+  const db = getDb();
+  const record = await db.lOARequest.findUnique({
+    where: { id: loaRequestId },
+    include: {
+      profile: {
+        include: {
+          user: { select: { id: true, accountStatus: true } },
+        },
+      },
+    },
+  });
+
+  if (!record) {
+    const error = new Error("LOA request not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const isOwn = actorUser?.profile?.id === record.profileId;
+  if (!isOwn || ["Returned", "Cancelled"].includes(record.status)) {
+    const error = new Error("Only the submitting member can withdraw an active LOA request.");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const withdrawalReason =
+    normalizeText(reason, 1000) || "Member withdrew LOA request from the portal.";
+
+  await db.$transaction(async (tx) => {
+    await tx.lOARequest.update({
+      where: { id: loaRequestId },
+      data: {
+        status: "Cancelled",
+        decisionDate: currentTimestamp(),
+        returnConfirmed: false,
+      },
+    });
+
+    if (record.status === "Approved" && record.profile.currentStatus === "LeaveOfAbsence") {
+      await tx.personnelProfile.update({
+        where: { id: record.profileId },
+        data: { currentStatus: "Active" },
+      });
+      await tx.user.update({
+        where: { id: record.profile.userId },
+        data: { accountStatus: "Active" },
+      });
+    }
+
+    await tx.auditLog.create({
+      data: {
+        actorUserId: actorUser?.id,
+        affectedProfileId: record.profileId,
+        module: "LOA",
+        action: "Withdrew LOA Request",
+        oldValue: { status: record.status },
+        newValue: { status: "Cancelled" },
+        reason: withdrawalReason,
+        relatedRecordId: loaRequestId,
+        severity: "Info",
+        systemGenerated: false,
+        ipSessionMetadata,
+      },
+    });
+  });
+
+  return (await listLoaRequests({ actorUser, limit: 100 })).find((item) => item.id === loaRequestId);
+}
+
+export async function updateLoaRequest({
+  actorUser,
+  loaRequestId,
+  startDate,
+  endDate,
+  reasonCategory,
+  details,
+  leadershipComment,
+  s1Notes,
+  reason,
+  ipSessionMetadata,
+}) {
+  assertDatabaseReady();
+
+  const db = getDb();
+  const record = await db.lOARequest.findUnique({
+    where: { id: loaRequestId },
+    include: {
+      profile: {
+        include: {
+          user: { select: { id: true } },
+          primaryUnit: true,
+          primaryBillet: true,
+        },
+      },
+    },
+  });
+
+  if (!record) {
+    const error = new Error("LOA request not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const canReview = await canActorReviewLoaRecord(actorUser, record);
+  if (!canReview || record.status === "Submitted") {
+    const error = new Error("Only scoped staff or command can edit a responded LOA request.");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const parsedStart = normalizeDate(startDate);
+  const parsedEnd = normalizeDate(endDate);
+  if (!parsedStart || !parsedEnd || parsedEnd < parsedStart) {
+    const error = new Error("LOA start and end dates must be valid, and end date must be on or after start date.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const category = normalizeText(reasonCategory, 80);
+  if (!category) {
+    const error = new Error("LOA reason category is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const updateReason = normalizeText(reason, 1000);
+  if (!updateReason) {
+    const error = new Error("A reason is required when editing a responded LOA request.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const nextDetails = normalizeText(details, 2000) || null;
+  const nextLeadershipComment = normalizeText(leadershipComment, 2000) || null;
+  const nextS1Notes = normalizeText(s1Notes, 2000) || null;
+
+  await db.$transaction(async (tx) => {
+    await tx.lOARequest.update({
+      where: { id: loaRequestId },
+      data: {
+        startDate: parsedStart,
+        endDate: parsedEnd,
+        reasonCategory: category,
+        details: nextDetails,
+        leadershipComment: nextLeadershipComment,
+        s1Notes: nextS1Notes,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        actorUserId: actorUser?.id,
+        affectedProfileId: record.profileId,
+        module: "LOA",
+        action: "Edited Responded LOA Request",
+        oldValue: {
+          startDate: record.startDate,
+          endDate: record.endDate,
+          reasonCategory: record.reasonCategory,
+          details: record.details,
+          leadershipComment: record.leadershipComment,
+          s1Notes: record.s1Notes,
+          status: record.status,
+        },
+        newValue: {
+          startDate: parsedStart,
+          endDate: parsedEnd,
+          reasonCategory: category,
+          details: nextDetails,
+          leadershipComment: nextLeadershipComment,
+          s1Notes: nextS1Notes,
+          status: record.status,
+        },
+        reason: updateReason,
+        relatedRecordId: loaRequestId,
+        severity: "Info",
         systemGenerated: false,
         ipSessionMetadata,
       },

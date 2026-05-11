@@ -22,10 +22,12 @@ import {
   submitApplication,
   submitBugReport,
   submitLoaRequest,
+  updateLoaRequest,
   updateAttendanceRecord,
   updateCalendarEvent,
   updatePersonnelProfile,
   updateApplicationStatus,
+  withdrawLoaRequest,
   writeAuditLog,
 } from "../services/portal-data.js";
 import { listPortalRoles, listPortalUsers, updatePortalUserRoles } from "../services/users.js";
@@ -263,6 +265,29 @@ export function apiRouter() {
   );
 
   router.patch(
+    "/loa/:id",
+    requireAuth,
+    asyncRoute(async (req, res) => {
+      const item = await updateLoaRequest({
+        actorUser: req.user,
+        loaRequestId: req.params.id,
+        startDate: req.body.startDate,
+        endDate: req.body.endDate,
+        reasonCategory: req.body.reasonCategory,
+        details: req.body.details,
+        leadershipComment: req.body.leadershipComment,
+        s1Notes: req.body.s1Notes,
+        reason: req.body.reason,
+        ipSessionMetadata: {
+          ip: req.ip,
+          userAgent: req.get("user-agent"),
+        },
+      });
+      res.json({ item });
+    }),
+  );
+
+  router.patch(
     "/loa/:id/status",
     requireAuth,
     asyncRoute(async (req, res) => {
@@ -272,6 +297,23 @@ export function apiRouter() {
         status: req.body.status,
         leadershipComment: req.body.leadershipComment,
         s1Notes: req.body.s1Notes,
+        reason: req.body.reason,
+        ipSessionMetadata: {
+          ip: req.ip,
+          userAgent: req.get("user-agent"),
+        },
+      });
+      res.json({ item });
+    }),
+  );
+
+  router.patch(
+    "/loa/:id/withdraw",
+    requireAuth,
+    asyncRoute(async (req, res) => {
+      const item = await withdrawLoaRequest({
+        actorUser: req.user,
+        loaRequestId: req.params.id,
         reason: req.body.reason,
         ipSessionMetadata: {
           ip: req.ip,
