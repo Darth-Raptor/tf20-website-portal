@@ -381,7 +381,7 @@ function applyRole() {
   });
 
   if (metricGrid) {
-    metricGrid.hidden = ["applicant", "member", "staff"].includes(role);
+    metricGrid.hidden = role !== "command";
   }
 
   syncEventRolePanels();
