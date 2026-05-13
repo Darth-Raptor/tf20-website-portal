@@ -4,6 +4,7 @@ import { config } from "../config.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import {
   assertCanAccessPersonnelProfile,
+  canAccessRecords,
   canAccessPersonnelRoster,
   createCalendarEvent,
   deleteLoaRequest,
@@ -185,7 +186,7 @@ export function apiRouter() {
     "/records",
     requireAuth,
     asyncRoute(async (req, res) => {
-      if (!canAccessPersonnelRoster(req.user)) {
+      if (!canAccessRecords(req.user)) {
         res.status(403).json({ error: "Forbidden" });
         return;
       }

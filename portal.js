@@ -163,7 +163,7 @@ const unitMosCatalog = {
 const roleAccess = {
   applicant: ["dashboard", "profile", "support"],
   member: ["dashboard", "profile", "loa", "events", "training", "support", "audit"],
-  staff: ["dashboard", "profile", "loa", "personnel", "records", "events", "training", "actions", "support", "audit"],
+  staff: ["dashboard", "profile", "loa", "personnel", "events", "training", "actions", "support", "audit"],
   command: [
     "dashboard",
     "profile",
@@ -647,6 +647,14 @@ async function loadPersonnel() {
 
 async function loadRecords() {
   if (!recordsRows || !recordDetail || !recordDetailStatus) return;
+
+  if (!canAccessRecords()) {
+    records = [];
+    selectedRecordId = null;
+    recordsLoadError = "";
+    renderRecords();
+    return;
+  }
 
   recordsLoadError = "";
   recordsRows.innerHTML = `<tr><td colspan="4">Loading records...</td></tr>`;
@@ -2510,6 +2518,10 @@ function canManageUsers() {
 
 function canViewAs() {
   return baseAccessRole === "system" || hasPermission("system:admin");
+}
+
+function canAccessRecords() {
+  return ["command", "system"].includes(activeAccessRole);
 }
 
 function canReadAllPersonnel() {

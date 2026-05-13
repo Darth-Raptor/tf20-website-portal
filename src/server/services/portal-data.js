@@ -249,6 +249,19 @@ export function canAccessPersonnelRoster(user) {
   return canReadScopedPersonnel(user);
 }
 
+export function canAccessRecords(user) {
+  const roles = user?.roles || [];
+  const permissions = user?.permissions || [];
+
+  if (permissions.includes("system:admin")) return true;
+  if (roles.some((role) => ["system-admin", "command", "command-staff"].includes(role))) return true;
+
+  return isCommandStaffBillet({
+    unitName: user?.profile?.unit?.name,
+    billetName: user?.profile?.billet?.name,
+  });
+}
+
 function canManageEvents(user) {
   return (
     hasFullPersonnelAccess(user) ||
