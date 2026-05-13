@@ -104,6 +104,11 @@ img {
   color: #fff;
 }
 
+.portal-brand strong,
+.portal-brand small {
+  white-space: nowrap;
+}
+
 .portal-brand small,
 .profile-chip span {
   display: block;
@@ -250,6 +255,11 @@ h3 {
 h1 {
   font-size: 2rem;
   line-height: 1.05;
+}
+
+#viewTitle {
+  color: var(--gold-2);
+  text-transform: uppercase;
 }
 
 h2 {

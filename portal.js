@@ -356,7 +356,7 @@ function setView(viewName) {
   currentView = viewName;
   tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.view === viewName));
   panels.forEach((panel) => panel.classList.toggle("active", panel.dataset.viewPanel === viewName));
-  viewTitle.textContent = titles[viewName] || titleCase(viewName);
+  viewTitle.textContent = (titles[viewName] || titleCase(viewName)).toUpperCase();
 }
 
 function applyRole() {
