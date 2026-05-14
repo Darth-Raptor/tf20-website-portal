@@ -261,6 +261,31 @@ const personnelRankFallbackOrder = new Map(
     "RCT",
   ].map((rank, index) => [rank, index + 1]),
 );
+const personnelBilletOrder = new Map(
+  [
+    "Commanding Officer",
+    "Executive Officer",
+    "Noncommissioned Officer in Charge",
+    "Platoon Leader",
+    "Platoon Sergeant",
+    "Squad Leader",
+    "Team Leader",
+    "Assistant Team Leader",
+    "Radio Telephone Operator",
+    "Joint Terminal Attack Controller",
+    "Medic",
+    "Engineer",
+    "Assaulter / Breacher",
+    "Heavy Weapons Operator",
+    "Automatic Rifleman",
+    "Grenadier",
+    "Aviator",
+    "Aircrew Member",
+    "Rifleman",
+    "Missing",
+    "None",
+  ].map((billet, index) => [personnelSortKey(billet), index + 1]),
+);
 
 const applicationFieldMap = {
   steam64Id: applicationSteam64,
@@ -968,6 +993,14 @@ function renderApplicationDetail() {
   });
 }
 
+function personnelSortKey(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
 function personnelSortText(value) {
   const text = String(value ?? "").trim();
   return text || "zzzz";
@@ -982,6 +1015,10 @@ function personnelRankSortOrder(member) {
   return personnelRankFallbackOrder.get(String(member.rank || "").toUpperCase()) || Number.MAX_SAFE_INTEGER;
 }
 
+function personnelBilletSortOrder(member) {
+  return personnelBilletOrder.get(personnelSortKey(member.billet)) || Number.MAX_SAFE_INTEGER;
+}
+
 function comparePersonnel(left, right, sortMode) {
   switch (sortMode) {
     case "rank": {
@@ -989,7 +1026,12 @@ function comparePersonnel(left, right, sortMode) {
       return rankSort || comparePersonnelText(left.rank, right.rank) || comparePersonnelText(left.alias, right.alias);
     }
     case "billet":
-      return comparePersonnelText(left.billet, right.billet) || comparePersonnelText(left.alias, right.alias);
+      return (
+        personnelBilletSortOrder(left) - personnelBilletSortOrder(right) ||
+        comparePersonnelText(left.billet, right.billet) ||
+        comparePersonnelText(left.unit, right.unit) ||
+        comparePersonnelText(left.alias, right.alias)
+      );
     case "unit":
       return comparePersonnelText(left.unit, right.unit) || comparePersonnelText(left.alias, right.alias);
     case "mos":
