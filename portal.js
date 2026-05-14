@@ -84,6 +84,8 @@ const loaDetails = document.querySelector("#loaDetails");
 const loaFormFeedback = document.querySelector("#loaFormFeedback");
 const submitLoaButton = document.querySelector("#submitLoaButton");
 const loaQueue = document.querySelector("#loaQueue");
+const loaDetail = document.querySelector("#loaDetail");
+const loaDetailStatus = document.querySelector("#loaDetailStatus");
 const unitTreeContainer = document.querySelector("#unitTreeContainer");
 const unitSummaryList = document.querySelector("#unitSummaryList");
 const supportForm = document.querySelector("#supportForm");
@@ -223,6 +225,7 @@ let selectedPersonnelId = null;
 let selectedRecordId = null;
 let selectedEventId = null;
 let selectedAttendanceRecordId = null;
+let selectedLoaId = null;
 let currentUser = null;
 let baseAccessRole = "applicant";
 let activeAccessRole = "applicant";
@@ -1374,12 +1377,12 @@ function renderEventEditor() {
 }
 
 function syncEventRolePanels() {
-  const eventPanels = document.querySelectorAll('[data-view-panel="events"] .panel');
+  const eventPanels = document.querySelectorAll('[data-view-panel="events"] [data-events-staff]');
   if (!eventPanels.length) return;
 
   const showOnlyCalendar = activeAccessRole === "member";
-  eventPanels.forEach((panel, index) => {
-    panel.hidden = showOnlyCalendar && index > 0;
+  eventPanels.forEach((panel) => {
+    panel.hidden = showOnlyCalendar;
   });
 }
 
@@ -1444,7 +1447,8 @@ function renderLoaRequests() {
   if (!loaQueue) return;
 
   if (loaLoadError) {
-    loaQueue.innerHTML = `<p class="section-note">${escapeHtml(loaLoadError)}</p>`;
+    loaQueue.innerHTML = `<tr><td colspan="5">${escapeHtml(loaLoadError)}</td></tr>`;
+    renderLoaDetail([]);
     return;
   }
 
@@ -1452,46 +1456,93 @@ function renderLoaRequests() {
     ? loaRequests
     : loaRequests.filter((record) => record.profileId === currentUserPersonnelProfile()?.id);
 
+  if (!visibleLoaRequests.some((record) => record.id === selectedLoaId)) {
+    selectedLoaId = visibleLoaRequests[0]?.id || null;
+  }
+
   if (!visibleLoaRequests.length) {
-    loaQueue.innerHTML = `<p class="section-note">No LOA requests have been submitted yet.</p>`;
+    loaQueue.innerHTML = `<tr><td colspan="5">No LOA requests have been submitted yet.</td></tr>`;
+    renderLoaDetail(visibleLoaRequests);
     return;
   }
 
   loaQueue.innerHTML = visibleLoaRequests
-    .map((record) => {
-      const buttons = [];
-      if (record.canApproveDeny) {
-        buttons.push(`<button class="button" type="button" data-loa-action="approve" data-loa-id="${escapeHtml(record.id)}">Approve</button>`);
-        buttons.push(`<button class="button danger" type="button" data-loa-action="deny" data-loa-id="${escapeHtml(record.id)}">Deny</button>`);
-      }
-      if (record.canEditResponded) {
-        buttons.push(`<button class="button ghost" type="button" data-loa-action="edit" data-loa-id="${escapeHtml(record.id)}">Edit</button>`);
-      }
-      if (record.canMarkReturned) {
-        buttons.push(`<button class="button ghost" type="button" data-loa-action="return" data-loa-id="${escapeHtml(record.id)}">Mark Returned</button>`);
-      }
-      if (record.canWithdraw) {
-        buttons.push(`<button class="button ghost" type="button" data-loa-action="withdraw" data-loa-id="${escapeHtml(record.id)}">Withdraw</button>`);
-      }
-      if (record.canDelete) {
-        buttons.push(`<button class="button danger" type="button" data-loa-action="delete" data-loa-id="${escapeHtml(record.id)}">Delete</button>`);
-      }
-      return `
-        <article>
-          <strong>${escapeHtml(record.member)} | ${escapeHtml(record.rank)}</strong>
-          <span>${escapeHtml(record.unit)} | ${escapeHtml(record.billet)}</span>
-          <span>${escapeHtml(formatDate(record.startDate))} to ${escapeHtml(formatDate(record.endDate))}</span>
-          <span>${escapeHtml(record.reasonCategory)} | ${escapeHtml(record.status)}</span>
-          <span>${escapeHtml(record.details || "No additional details provided.")}</span>
-          ${record.leadershipComment ? `<span><strong>Leadership:</strong> ${escapeHtml(record.leadershipComment)}</span>` : ""}
-          ${record.s1Notes ? `<span><strong>S1 Notes:</strong> ${escapeHtml(record.s1Notes)}</span>` : ""}
-          ${buttons.length ? `<div class="action-row">${buttons.join("")}</div>` : ""}
-        </article>
-      `;
-    })
+    .map(
+      (record) => `
+        <tr data-loa-id="${escapeHtml(record.id)}" class="${record.id === selectedLoaId ? "selected" : ""}">
+          <td><strong>${escapeHtml(record.member)}</strong><br><span class="muted">${escapeHtml(record.rank)}</span></td>
+          <td>${escapeHtml(record.unit)}<br><span class="muted">${escapeHtml(record.billet)}</span></td>
+          <td>${escapeHtml(formatDate(record.startDate))}<br><span class="muted">${escapeHtml(formatDate(record.endDate))}</span></td>
+          <td>${escapeHtml(record.reasonCategory)}</td>
+          <td>${statusPill(record.status)}</td>
+        </tr>
+      `,
+    )
     .join("");
 
+  loaQueue.querySelectorAll("[data-loa-id]").forEach((row) => {
+    row.addEventListener("click", () => {
+      selectedLoaId = row.dataset.loaId;
+      renderLoaRequests();
+    });
+  });
+
+  renderLoaDetail(visibleLoaRequests);
+}
+
+function renderLoaDetail(visibleLoaRequests) {
+  if (!loaDetail || !loaDetailStatus) return;
+
+  const record = visibleLoaRequests.find((item) => item.id === selectedLoaId) || null;
+  if (!record) {
+    loaDetailStatus.textContent = "No selection";
+    loaDetail.innerHTML = `<p class="panel-copy">Select an LOA request to inspect details and available actions.</p>`;
+    return;
+  }
+
+  const buttons = [];
+  if (record.canApproveDeny) {
+    buttons.push(`<button class="button" type="button" data-loa-action="approve" data-loa-id="${escapeHtml(record.id)}">Approve</button>`);
+    buttons.push(`<button class="button danger" type="button" data-loa-action="deny" data-loa-id="${escapeHtml(record.id)}">Deny</button>`);
+  }
+  if (record.canEditResponded) {
+    buttons.push(`<button class="button ghost" type="button" data-loa-action="edit" data-loa-id="${escapeHtml(record.id)}">Edit</button>`);
+  }
+  if (record.canMarkReturned) {
+    buttons.push(`<button class="button ghost" type="button" data-loa-action="return" data-loa-id="${escapeHtml(record.id)}">Mark Returned</button>`);
+  }
+  if (record.canWithdraw) {
+    buttons.push(`<button class="button ghost" type="button" data-loa-action="withdraw" data-loa-id="${escapeHtml(record.id)}">Withdraw</button>`);
+  }
+  if (record.canDelete) {
+    buttons.push(`<button class="button danger" type="button" data-loa-action="delete" data-loa-id="${escapeHtml(record.id)}">Delete</button>`);
+  }
+
+  loaDetailStatus.textContent = record.status;
+  loaDetail.innerHTML = `
+    <div class="detail-title">
+      <div>
+        <strong>${escapeHtml(record.member)} | ${escapeHtml(record.rank)}</strong>
+        <span>${escapeHtml(record.unit)} | ${escapeHtml(record.billet)}</span>
+      </div>
+      ${statusPill(record.status)}
+    </div>
+    <div class="detail-grid">
+      <div><span>Start</span><strong>${escapeHtml(formatDate(record.startDate))}</strong></div>
+      <div><span>End</span><strong>${escapeHtml(formatDate(record.endDate))}</strong></div>
+      <div><span>Reason</span><strong>${escapeHtml(record.reasonCategory)}</strong></div>
+      <div><span>Status</span><strong>${escapeHtml(record.status)}</strong></div>
+      <div><span>Leadership</span><strong>${escapeHtml(record.leadershipComment || "No comment recorded")}</strong></div>
+      <div><span>S1 Notes</span><strong>${escapeHtml(record.s1Notes || "No S1 notes recorded")}</strong></div>
+    </div>
+    <p class="detail-copy">${escapeHtml(record.details || "No additional details provided.")}</p>
+    ${buttons.length ? `<div class="action-row">${buttons.join("")}</div>` : `<p class="section-note">No actions are available for this request.</p>`}
+  `;
+
   loaQueue.querySelectorAll("[data-loa-action]").forEach((button) => {
+    button.addEventListener("click", () => reviewLoa(button.dataset.loaId, button.dataset.loaAction));
+  });
+  loaDetail.querySelectorAll("[data-loa-action]").forEach((button) => {
     button.addEventListener("click", () => reviewLoa(button.dataset.loaId, button.dataset.loaAction));
   });
 }
@@ -1544,6 +1595,7 @@ async function submitLoaForm(event) {
       }),
     });
     loaRequests = [response.item, ...loaRequests.filter((record) => record.id !== response.item.id)];
+    selectedLoaId = response.item.id;
     renderLoaRequests();
     await Promise.all([loadDashboardSummary(), loadPersonnel()]);
     setLoaFeedback("LOA request submitted.", "success");
@@ -1687,6 +1739,7 @@ async function deleteLoaRequest(loaId) {
       }),
     });
     loaRequests = loaRequests.filter((item) => item.id !== loaId);
+    selectedLoaId = loaRequests[0]?.id || null;
     renderLoaRequests();
     await Promise.all([loadDashboardSummary(), loadPersonnel(), loadAuditLogs()]);
     showToast("LOA record deleted.");

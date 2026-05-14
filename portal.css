@@ -406,6 +406,195 @@ h3 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.workspace-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: calc(100svh - 122px);
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.workspace-commandbar,
+.workspace-statusbar {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  border-color: var(--line);
+  background: #101411;
+}
+
+.workspace-commandbar {
+  grid-template-columns: minmax(180px, 1fr) minmax(240px, 420px) minmax(160px, 240px);
+  border-bottom: 1px solid var(--line);
+  padding: 10px 12px;
+}
+
+.workspace-commandbar > .button {
+  justify-self: end;
+}
+
+.commandbar-title strong,
+.workspace-section-header h2,
+.inspector-header h2 {
+  display: block;
+  color: #fff;
+  font-size: 0.92rem;
+  line-height: 1.1;
+}
+
+.commandbar-title span,
+.workspace-section-header span,
+.inspector-header span,
+.workspace-statusbar span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.workspace-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 390px);
+  min-height: 0;
+}
+
+.workspace-grid,
+.workspace-inspector {
+  min-width: 0;
+  min-height: 0;
+}
+
+.workspace-grid {
+  overflow: auto;
+  background: #0d110e;
+}
+
+.workspace-grid > .table-wrap,
+.workspace-section > .table-wrap {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
+.workspace-grid table,
+.workspace-section table {
+  min-width: 820px;
+}
+
+.workspace-section {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 280px;
+  border-bottom: 1px solid var(--line);
+}
+
+.workspace-section:last-child {
+  border-bottom: 0;
+}
+
+.workspace-section-header,
+.inspector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 12px;
+  background: #111612;
+}
+
+.inspector-header.compact {
+  border-top: 0;
+}
+
+.workspace-inspector {
+  overflow: auto;
+  border-left: 1px solid var(--line);
+  background: #111612;
+}
+
+.workspace-inspector .detail-panel,
+.workspace-inspector .stack-form,
+.workspace-inspector .identity-list,
+.workspace-inspector .role-editor,
+.workspace-inspector .role-catalog,
+.workspace-inspector .record-tabs {
+  margin: 12px;
+}
+
+.workspace-inspector .detail-panel {
+  gap: 10px;
+}
+
+.workspace-inspector .action-row {
+  margin: 12px;
+}
+
+.inspector-divider {
+  border-top: 1px solid var(--line);
+}
+
+.workspace-statusbar {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  padding: 7px 12px;
+}
+
+.record-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.record-tabs span {
+  min-height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 4px 8px;
+  color: var(--soft);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.field-matrix {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.workspace-shell .table-wrap {
+  background: #0e130f;
+}
+
+.workspace-shell th,
+.workspace-shell td {
+  padding: 10px 12px;
+}
+
+.workspace-shell tbody tr {
+  cursor: pointer;
+}
+
+.workspace-shell .detail-grid {
+  grid-template-columns: 1fr;
+}
+
+.workspace-shell .detail-grid div,
+.workspace-shell .section-note,
+.workspace-shell .identity-list div,
+.workspace-shell .role-catalog article,
+.workspace-shell .role-option {
+  border-radius: 0;
+  background: #0d120f;
+}
+
+.workspace-shell .tag-cloud,
+.workspace-shell .detail-copy {
+  margin-top: 0;
+}
+
 .panel {
   padding: 18px;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
@@ -924,6 +1113,15 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .workspace-body {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-inspector {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
   .notice-status {
     grid-template-columns: 1fr;
   }
@@ -949,7 +1147,10 @@ textarea {
   .dashboard-grid,
   .section-grid,
   .training-grid,
-  .toolbar {
+  .toolbar,
+  .workspace-commandbar,
+  .workspace-statusbar,
+  .field-matrix {
     grid-template-columns: 1fr;
   }
 
