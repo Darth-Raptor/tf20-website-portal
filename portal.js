@@ -35,6 +35,7 @@ const acceptApplicantButton = document.querySelector("#acceptApplicantButton");
 const denyApplicantButton = document.querySelector("#denyApplicantButton");
 
 const personnelSearch = document.querySelector("#personnelSearch");
+const personnelSort = document.querySelector("#personnelSort");
 const personnelStatusFilter = document.querySelector("#personnelStatusFilter");
 const personnelRows = document.querySelector("#personnelRows");
 const personnelDetail = document.querySelector("#personnelDetail");
@@ -234,6 +235,33 @@ let portalUsers = [];
 let portalRoles = [];
 let selectedUserId = null;
 
+const personnelTextCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+const personnelRankFallbackOrder = new Map(
+  [
+    "COL",
+    "LTC",
+    "MAJ",
+    "CPT",
+    "1LT",
+    "2LT",
+    "CW4",
+    "CW3",
+    "CW2",
+    "SGM",
+    "CSM",
+    "MSG",
+    "SFC",
+    "SSG",
+    "SGT",
+    "CPL",
+    "SPC",
+    "PFC",
+    "PV2",
+    "PVT",
+    "RCT",
+  ].map((rank, index) => [rank, index + 1]),
+);
+
 const applicationFieldMap = {
   steam64Id: applicationSteam64,
   timezone: applicationTimezone,
@@ -278,6 +306,7 @@ Object.entries(applicationFieldMap).forEach(([key, field]) => {
   field?.addEventListener("blur", () => validateApplicationField(key));
 });
 personnelSearch?.addEventListener("input", renderPersonnel);
+personnelSort?.addEventListener("change", renderPersonnel);
 personnelStatusFilter?.addEventListener("change", renderPersonnel);
 recordsSearch?.addEventListener("input", renderRecords);
 recordsStatusFilter?.addEventListener("change", renderRecords);
@@ -939,10 +968,43 @@ function renderApplicationDetail() {
   });
 }
 
+function personnelSortText(value) {
+  const text = String(value ?? "").trim();
+  return text || "zzzz";
+}
+
+function comparePersonnelText(left, right) {
+  return personnelTextCollator.compare(personnelSortText(left), personnelSortText(right));
+}
+
+function personnelRankSortOrder(member) {
+  if (Number.isFinite(member.rankSortOrder)) return member.rankSortOrder;
+  return personnelRankFallbackOrder.get(String(member.rank || "").toUpperCase()) || Number.MAX_SAFE_INTEGER;
+}
+
+function comparePersonnel(left, right, sortMode) {
+  switch (sortMode) {
+    case "rank": {
+      const rankSort = personnelRankSortOrder(left) - personnelRankSortOrder(right);
+      return rankSort || comparePersonnelText(left.rank, right.rank) || comparePersonnelText(left.alias, right.alias);
+    }
+    case "billet":
+      return comparePersonnelText(left.billet, right.billet) || comparePersonnelText(left.alias, right.alias);
+    case "unit":
+      return comparePersonnelText(left.unit, right.unit) || comparePersonnelText(left.alias, right.alias);
+    case "mos":
+      return comparePersonnelText(left.primaryMos, right.primaryMos) || comparePersonnelText(left.alias, right.alias);
+    case "alias":
+    default:
+      return comparePersonnelText(left.alias, right.alias);
+  }
+}
+
 function renderPersonnel() {
   if (!personnelRows || !personnelDetail || !personnelDetailStatus) return;
 
   const query = personnelSearch?.value?.trim().toLowerCase() || "";
+  const sortMode = personnelSort?.value || "alias";
   const status = personnelStatusFilter?.value || "all";
 
   if (personnelLoadError) {
@@ -955,24 +1017,26 @@ function renderPersonnel() {
     ? personnel
     : personnel.filter((member) => member.userId === currentUser?.id);
 
-  const visiblePersonnel = scopedPersonnel.filter((member) => {
-    const matchesStatus = status === "all" || member.status === status;
-    const searchable = [
-      member.rank,
-      member.alias,
-      member.discord,
-      member.steam64,
-      member.unit,
-      member.primaryMos,
-      member.billet,
-      member.statusLabel,
-      member.flags,
-      member.qualifications,
-    ]
-      .join(" ")
-      .toLowerCase();
-    return matchesStatus && (!query || searchable.includes(query));
-  });
+  const visiblePersonnel = scopedPersonnel
+    .filter((member) => {
+      const matchesStatus = status === "all" || member.status === status;
+      const searchable = [
+        member.rank,
+        member.alias,
+        member.discord,
+        member.steam64,
+        member.unit,
+        member.primaryMos,
+        member.billet,
+        member.statusLabel,
+        member.flags,
+        member.qualifications,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return matchesStatus && (!query || searchable.includes(query));
+    })
+    .sort((left, right) => comparePersonnel(left, right, sortMode));
 
   if (!visiblePersonnel.some((member) => member.id === selectedPersonnelId)) {
     selectedPersonnelId = visiblePersonnel[0]?.id || null;
@@ -2208,6 +2272,9 @@ function normalizePersonnel(item) {
   const user = item?.user || {};
   const counts = item?.counts || {};
   const rank = item?.rank?.abbreviation || "Unranked";
+  const rankSortOrder = Number.isFinite(item?.rank?.sortOrder)
+    ? item.rank.sortOrder
+    : personnelRankFallbackOrder.get(String(rank).toUpperCase()) || Number.MAX_SAFE_INTEGER;
   const alias = user.displayAlias || user.discordDisplayName || user.discordUsername || "Unknown Member";
   const billet = item?.billet?.name || "";
   const status = item?.status || user.accountStatus || "Unknown";
@@ -2238,6 +2305,7 @@ function normalizePersonnel(item) {
     unitId: item?.unit?.id || "",
     billetId: item?.billet?.id || "",
     rank,
+    rankSortOrder,
     alias,
     discord: user.discordUsername || "Unknown Discord",
     steam64: user.steam64Id || "",

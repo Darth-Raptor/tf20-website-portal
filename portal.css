@@ -466,6 +466,10 @@ h3 {
   padding: 10px 12px;
 }
 
+.workspace-commandbar.personnel-commandbar {
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 360px) repeat(2, minmax(150px, 220px));
+}
+
 .workspace-commandbar > .button {
   justify-self: end;
 }
@@ -1228,6 +1232,7 @@ textarea {
   .training-grid,
   .toolbar,
   .workspace-commandbar,
+  .workspace-commandbar.personnel-commandbar,
   .workspace-statusbar,
   .field-matrix {
     grid-template-columns: 1fr;
