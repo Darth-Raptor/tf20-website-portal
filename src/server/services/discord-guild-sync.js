@@ -121,7 +121,7 @@ async function handleGuildMemberJoin(member, options = {}) {
   });
 
   const nextDisplayName = displayNameForUser(discordUser, member);
-  const shouldEnableAccount = !["Discharged", "BannedDoNotRehire"].includes(existing?.accountStatus || "Applicant");
+  const shouldEnableAccount = !["Inactive", "Discharged", "BannedDoNotRehire"].includes(existing?.accountStatus || "Applicant");
 
   const user = await db.user.upsert({
     where: { discordId: discordUser.id },

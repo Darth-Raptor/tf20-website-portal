@@ -28,5 +28,8 @@ jobs:
       - name: Run syntax checks
         run: npm run check
 
+      - name: Run portal access audit
+        run: npm run access:audit
+
       - name: Run smoke boot
         run: npm run smoke

@@ -649,12 +649,20 @@ function renderMemberDashboard() {
 function renderStaffDashboard(workflows, personnelSummary, attendanceSummary) {
   if (!staffDashboardState) return;
 
+  const loaSummary = dashboardSummary?.loa || {};
+  const applicationSummary = dashboardSummary?.applications || {};
   const items = [
+    ["Pending applications", `${formatCount(applicationSummary.awaitingContact)} application${applicationSummary.awaitingContact === 1 ? "" : "s"} need recruiting action.`],
+    ["Pending LOA", `${formatCount(loaSummary.pendingReview)} LOA request${loaSummary.pendingReview === 1 ? "" : "s"} need review.`],
+    ["Missing alias", `${formatCount(personnelSummary.missingAlias)} active roster profile${personnelSummary.missingAlias === 1 ? "" : "s"} need display alias.`],
+    ["Missing rank", `${formatCount(personnelSummary.missingRank)} active roster profile${personnelSummary.missingRank === 1 ? "" : "s"} need rank.`],
+    ["Missing unit", `${formatCount(personnelSummary.missingUnit)} active roster profile${personnelSummary.missingUnit === 1 ? "" : "s"} need primary unit.`],
     ["Missing billet", `${formatCount(personnelSummary.missingBillet)} personnel profile${personnelSummary.missingBillet === 1 ? "" : "s"} need a primary billet.`],
     [
       "Missing Primary MOS",
       `${formatCount(personnelSummary.missingPrimaryMos)} personnel profile${personnelSummary.missingPrimaryMos === 1 ? "" : "s"} need Primary MOS.`,
     ],
+    ["Missing Steam64", `${formatCount(personnelSummary.missingSteam64)} active roster profile${personnelSummary.missingSteam64 === 1 ? "" : "s"} need Steam64.`],
     ["Qualification recommendations", `${formatCount(workflows.pendingQualifications)} records pending approval.`],
     ["Attendance review", `${formatCount(attendanceSummary.pendingReview)} attendance records pending review.`],
   ];
@@ -666,11 +674,14 @@ function renderCommandDashboard(units, totalActiveMembers) {
   if (!commandDashboardState) return;
 
   const countByUnitName = new Map(units.map((unit) => [unit.name, unit.personnelCount]));
+  const personnelSummary = dashboardSummary?.personnel || {};
+  const loaSummary = dashboardSummary?.loa || {};
   const commandUnits = [
-    ["Task Force 20", totalActiveMembers],
+    ["Task Force 20", personnelSummary.activeRoster || totalActiveMembers],
     ["A Co, 1/75th Ranger Regiment", countByUnitName.get("A Co, 1/75th Ranger Regiment") || 0],
     ["1 Troop, A Squadron, 1st SFOD-Delta", countByUnitName.get("1 Troop, A Squadron, 1st SFOD-Delta") || 0],
     ["B Co, 2/160th SOAR", countByUnitName.get("B Co, 2/160th SOAR") || 0],
+    ["Current LOA", loaSummary.current || 0],
   ];
 
   commandDashboardState.innerHTML = commandUnits
@@ -687,6 +698,7 @@ function renderSystemDashboard(workflows) {
 
   systemDashboardState.innerHTML = [
     ["Discord sync", discordText],
+    ["Discord sync issues", `${formatCount(workflows.failedDiscordSync)} queued or failed sync record${workflows.failedDiscordSync === 1 ? "" : "s"} need review.`],
     ["RCON collector", "No RCON attendance collector records are connected yet."],
     ["Support queue", `${formatCount(workflows.openSupport)} open support records.`],
   ]
@@ -2317,7 +2329,7 @@ function normalizePersonnel(item) {
   const alias = user.displayAlias || user.discordDisplayName || user.discordUsername || "Unknown Member";
   const billet = item?.billet?.name || "";
   const status = item?.status || user.accountStatus || "Unknown";
-  const lockedAssignments = ["Discharged", "BannedDoNotRehire"].includes(status);
+  const lockedAssignments = ["Inactive", "Discharged", "BannedDoNotRehire"].includes(status);
   const unit = lockedAssignments ? "None" : item?.unit?.name || "Unassigned";
   const staffAssignments = (item?.staffAssignments || [])
     .map((assignment) => assignment.staffSection?.code || assignment.staffSection?.name)
@@ -2443,13 +2455,17 @@ function accountStatusLabel(status) {
 }
 
 function isSeparatedPersonnelStatus(status) {
-  return ["Discharged", "BannedDoNotRehire"].includes(status);
+  return ["Inactive", "Discharged", "BannedDoNotRehire"].includes(status);
 }
 
 function syncPersonnelStatusLocks() {
   if (!personnelEditStatus) return;
 
   const locked = isSeparatedPersonnelStatus(personnelEditStatus.value);
+  if (personnelEditUnit) {
+    if (locked) personnelEditUnit.value = "";
+    personnelEditUnit.disabled = locked;
+  }
   if (personnelEditBillet) {
     if (locked) personnelEditBillet.value = "";
     personnelEditBillet.disabled = locked;

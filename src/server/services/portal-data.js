@@ -57,6 +57,8 @@ const activeApplicationStatuses = [
 ];
 const finalApplicationStatuses = new Set(["Denied", "Withdrawn", "ConvertedToRecruit"]);
 const activeRosterStatuses = ["Recruit", "ProbationaryMember", "Active", "Reserve", "LeaveOfAbsence"];
+const recordOnlyPersonnelStatuses = ["Inactive", "Discharged", "BannedDoNotRehire"];
+const separatedRecordStatuses = ["Discharged", "BannedDoNotRehire"];
 const loaReviewerBillets = new Set(["co", "commandingofficer", "xo", "executiveofficer", "pl", "platoonleader", "tl", "teamleader"]);
 
 const personnelProfileInclude = {
@@ -775,6 +777,13 @@ export async function updateApplicationStatus({
     }
 
     if (targetStatus === "ConvertedToRecruit") {
+      const roles = await tx.role.findMany({
+        where: { name: { in: ["Applicant", "Member"] } },
+        select: { id: true, name: true },
+      });
+      const memberRole = roles.find((role) => role.name === "Member");
+      const applicantRole = roles.find((role) => role.name === "Applicant");
+
       await tx.user.update({
         where: { id: application.userId },
         data: { accountStatus: "Recruit" },
@@ -792,6 +801,44 @@ export async function updateApplicationStatus({
           currentStatus: "Recruit",
           dateAccepted: new Date(),
           dateJoined: new Date(),
+        },
+      });
+
+      if (memberRole) {
+        await tx.userRole.upsert({
+          where: {
+            userId_roleId: {
+              userId: application.userId,
+              roleId: memberRole.id,
+            },
+          },
+          update: {},
+          create: {
+            userId: application.userId,
+            roleId: memberRole.id,
+          },
+        });
+      }
+
+      if (applicantRole) {
+        await tx.userRole.deleteMany({
+          where: {
+            userId: application.userId,
+            roleId: applicantRole.id,
+          },
+        });
+      }
+
+      await tx.discordSyncLog.create({
+        data: {
+          userId: application.userId,
+          action: "application-conversion",
+          status: "Queued",
+          expectedRoles: {
+            portalRole: "Member",
+            accountStatus: "Recruit",
+          },
+          currentRoles: [],
         },
       });
     }
@@ -852,7 +899,6 @@ export async function listPortalRecords({ search, status, limit = 200, actorUser
 
   const db = getDb();
   const normalizedSearch = search ? String(search).trim() : "";
-  const separatedStatuses = ["Discharged", "BannedDoNotRehire"];
   const allowedClassifications = ["Joined", "Applied", "Enlisted", "Discharged", "Left"];
   const recordClassification = allowedClassifications.includes(status) ? status : "";
 
@@ -961,12 +1007,12 @@ export async function listPortalRecords({ search, status, limit = 200, actorUser
     const latestLeaveLog = latestLeaveLogByUserId.get(item.user?.id);
     const joinedAt = latestJoinLog?.expectedRoles?.joinedAt || latestJoinLog?.createdAt || item.dateJoined || item.user?.createdAt;
     const leftAt = item.separationDate || latestLeaveLog?.createdAt || (item.user?.accountDisabled ? item.user.updatedAt : null);
-    const classification = separatedStatuses.includes(item.status) ? "Discharged" : "Enlisted";
+    const classification = separatedRecordStatuses.includes(item.status) ? "Discharged" : "Enlisted";
 
     return {
       id: `profile:${item.id}`,
       sourceId: item.id,
-      recordType: separatedStatuses.includes(item.status) ? "SeparatedProfile" : "PersonnelProfile",
+      recordType: recordOnlyPersonnelStatuses.includes(item.status) ? "SeparatedProfile" : "PersonnelProfile",
       status: item.status,
       statusLabel: accountStatusLabel(item.status),
       rank: item.rank?.abbreviation || "Unranked",
@@ -976,7 +1022,7 @@ export async function listPortalRecords({ search, status, limit = 200, actorUser
       joinDate: joinedAt,
       leaveDate: leftAt,
       workflowState: item.rehireEligibility || "Personnel profile on file",
-      recordSummary: separatedStatuses.includes(item.status)
+      recordSummary: recordOnlyPersonnelStatuses.includes(item.status)
         ? buildSeparatedRecordSummary(item)
         : `${displayUser(item.user) || "Member"} has an enlisted personnel profile on file.`,
       latestAdminNote: item.administrativeNotes?.[0]?.note || "",
@@ -1019,10 +1065,17 @@ export async function getPortalSummary({ actorUser } = {}) {
     personnelByStatus,
     totalPersonnel,
     activePersonnel,
+    activeRosterPersonnel,
+    currentLoaPersonnel,
+    missingAlias,
+    missingRank,
+    missingUnit,
     missingBillet,
     missingPrimaryMos,
+    missingSteam64,
     applicationsByStatus,
     pendingAttendanceReview,
+    pendingLoaReview,
     totalEvents,
     upcomingEvents,
     auditThisMonth,
@@ -1031,6 +1084,7 @@ export async function getPortalSummary({ actorUser } = {}) {
     pendingQualifications,
     openSupport,
     latestDiscordSync,
+    failedDiscordSync,
   ] = await Promise.all([
     db.personnelProfile.groupBy({
       by: ["currentStatus"],
@@ -1039,6 +1093,26 @@ export async function getPortalSummary({ actorUser } = {}) {
     }),
     db.personnelProfile.count({ where: accessWhere }),
     db.personnelProfile.count({ where: mergeWhere(accessWhere, { currentStatus: "Active" }) }),
+    db.personnelProfile.count({ where: mergeWhere(accessWhere, { currentStatus: { in: activeRosterStatuses } }) }),
+    db.personnelProfile.count({ where: mergeWhere(accessWhere, { currentStatus: "LeaveOfAbsence" }) }),
+    db.personnelProfile.count({
+      where: mergeWhere(accessWhere, {
+        currentStatus: { in: activeRosterStatuses },
+        user: { is: { OR: [{ displayAlias: null }, { displayAlias: "" }] } },
+      }),
+    }),
+    db.personnelProfile.count({
+      where: mergeWhere(accessWhere, {
+        currentStatus: { in: activeRosterStatuses },
+        currentRankId: null,
+      }),
+    }),
+    db.personnelProfile.count({
+      where: mergeWhere(accessWhere, {
+        currentStatus: { in: activeRosterStatuses },
+        primaryUnitId: null,
+      }),
+    }),
     db.personnelProfile.count({
       where: mergeWhere(accessWhere, {
         currentStatus: { in: activeRosterStatuses },
@@ -1051,11 +1125,18 @@ export async function getPortalSummary({ actorUser } = {}) {
         OR: [{ primaryMos: null }, { primaryMos: "" }],
       }),
     }),
+    db.personnelProfile.count({
+      where: mergeWhere(accessWhere, {
+        currentStatus: { in: activeRosterStatuses },
+        user: { is: { OR: [{ steam64Id: null }, { steam64Id: "" }] } },
+      }),
+    }),
     db.application.groupBy({
       by: ["status"],
       _count: { _all: true },
     }),
-    db.attendanceRecord.count({ where: { status: "PendingReview" } }),
+    db.attendanceRecord.count({ where: { status: "PendingReview", profile: { is: accessWhere } } }),
+    db.lOARequest.count({ where: { status: "Submitted", profile: { is: accessWhere } } }),
     db.calendarEvent.count(),
     db.calendarEvent.count({ where: { startsAt: { gte: now } } }),
     db.auditLog.count({ where: { createdAt: { gte: startOfMonth } } }),
@@ -1075,6 +1156,7 @@ export async function getPortalSummary({ actorUser } = {}) {
       where: { status: { notIn: ["Closed", "Resolved"] } },
     }),
     db.discordSyncLog.findFirst({ orderBy: { createdAt: "desc" } }),
+    db.discordSyncLog.count({ where: { status: { notIn: ["Success", "Reconciled"] } } }),
   ]);
 
   const unitIds = unitCounts.map((entry) => entry.primaryUnitId).filter(Boolean);
@@ -1098,8 +1180,14 @@ export async function getPortalSummary({ actorUser } = {}) {
     personnel: {
       total: totalPersonnel,
       active: activePersonnel,
+      activeRoster: activeRosterPersonnel,
+      currentLoa: currentLoaPersonnel,
+      missingAlias,
+      missingRank,
+      missingUnit,
       missingBillet,
       missingPrimaryMos,
+      missingSteam64,
       byStatus: groupCounts(personnelByStatus, "currentStatus"),
     },
     applications: {
@@ -1117,6 +1205,10 @@ export async function getPortalSummary({ actorUser } = {}) {
       totalEvents,
       upcomingEvents,
     },
+    loa: {
+      pendingReview: pendingLoaReview,
+      current: currentLoaPersonnel,
+    },
     audit: {
       thisMonth: auditThisMonth,
       total: totalAudit,
@@ -1133,7 +1225,9 @@ export async function getPortalSummary({ actorUser } = {}) {
     })),
     workflows: {
       pendingQualifications,
+      pendingLoaReview,
       openSupport,
+      failedDiscordSync,
       discordGuildSyncConfigured: isDiscordGuildSyncConfigured(),
       latestDiscordSync: latestDiscordSync
         ? {
@@ -1182,9 +1276,9 @@ export async function updatePersonnelProfile({
   }
 
   const nextStatus = status && accountStatuses.has(status) ? status : profile.currentStatus;
-  const lockAssignmentFields = ["Discharged", "BannedDoNotRehire"].includes(nextStatus);
+  const lockAssignmentFields = recordOnlyPersonnelStatuses.includes(nextStatus);
   const nextPrimaryUnitId = lockAssignmentFields ? null : primaryUnitId ?? profile.primaryUnitId;
-  const nextPrimaryMos = lockAssignmentFields ? null : normalizeText(primaryMos, 160) || null;
+  const nextPrimaryMos = lockAssignmentFields ? null : primaryMos === undefined ? profile.primaryMos : normalizeText(primaryMos, 160) || null;
   const nextGoodStanding = typeof goodStanding === "boolean" ? goodStanding : profile.goodStanding;
   const nextPrimaryBilletId = lockAssignmentFields ? null : primaryBilletId ?? profile.primaryBilletId;
   const nextStaffSectionIds = lockAssignmentFields
@@ -1222,7 +1316,20 @@ export async function updatePersonnelProfile({
     }
   }
 
-  const auditReason = normalizeText(reason, 1000) || "Updated personnel profile from the portal.";
+  const auditReason = normalizeText(reason, 1000);
+  if (!auditReason) {
+    const error = new Error("Personnel updates require an audit reason.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const now = currentTimestamp();
+  const unitChanged = profile.primaryUnitId !== nextPrimaryUnitId;
+  const billetChanged = profile.primaryBilletId !== nextPrimaryBilletId;
+  const statusChanged = profile.currentStatus !== nextStatus;
+  const nextSeparationDate = lockAssignmentFields ? profile.separationDate || now : null;
+  const nextSeparationType = lockAssignmentFields ? accountStatusLabel(nextStatus) : null;
+  const nextRehireEligibility = nextStatus === "BannedDoNotRehire" ? "Do not rehire" : lockAssignmentFields ? profile.rehireEligibility : null;
 
   await db.$transaction(async (tx) => {
     await tx.personnelProfile.update({
@@ -1233,6 +1340,9 @@ export async function updatePersonnelProfile({
         primaryMos: nextPrimaryMos,
         currentStatus: nextStatus,
         goodStanding: nextGoodStanding,
+        separationDate: nextSeparationDate,
+        separationType: nextSeparationType,
+        rehireEligibility: nextRehireEligibility,
       },
     });
 
@@ -1241,9 +1351,59 @@ export async function updatePersonnelProfile({
       data: { accountStatus: nextStatus },
     });
 
+    if (unitChanged || lockAssignmentFields) {
+      await tx.unitAssignment.updateMany({
+        where: {
+          profileId,
+          assignmentType: "Primary",
+          endDate: null,
+        },
+        data: { endDate: now, reason: auditReason },
+      });
+
+      if (nextPrimaryUnitId) {
+        await tx.unitAssignment.create({
+          data: {
+            profileId,
+            unitId: nextPrimaryUnitId,
+            assignmentType: "Primary",
+            effectiveDate: now,
+            assignedByUserId: actorUser?.id,
+            reason: auditReason,
+          },
+        });
+      }
+    }
+
+    if (billetChanged || lockAssignmentFields) {
+      await tx.billetHistory.updateMany({
+        where: {
+          profileId,
+          assignmentType: "Primary",
+          endDate: null,
+        },
+        data: { endDate: now, reason: auditReason },
+      });
+
+      if (nextPrimaryBilletId) {
+        await tx.billetHistory.create({
+          data: {
+            profileId,
+            billetId: nextPrimaryBilletId,
+            unitId: nextPrimaryUnitId,
+            staffSectionId: null,
+            startDate: now,
+            assignmentType: "Primary",
+            assignedById: actorUser?.id,
+            reason: auditReason,
+          },
+        });
+      }
+    }
+
     await tx.staffAssignment.updateMany({
       where: { profileId, endDate: null },
-      data: { endDate: currentTimestamp(), reason: auditReason },
+      data: { endDate: now, reason: auditReason },
     });
 
     for (const staffSectionId of nextStaffSectionIds) {
@@ -1251,7 +1411,7 @@ export async function updatePersonnelProfile({
         data: {
           profileId,
           staffSectionId,
-          effectiveDate: currentTimestamp(),
+          effectiveDate: now,
           assignmentType: "StaffAssignment",
           assignedByUserId: actorUser?.id,
           reason: auditReason,
@@ -1271,6 +1431,9 @@ export async function updatePersonnelProfile({
           primaryMos: profile.primaryMos,
           currentStatus: profile.currentStatus,
           goodStanding: profile.goodStanding,
+          separationDate: profile.separationDate,
+          separationType: profile.separationType,
+          rehireEligibility: profile.rehireEligibility,
           staffSectionIds: profile.staffAssignments.map((assignment) => assignment.staffSectionId),
         },
         newValue: {
@@ -1279,6 +1442,12 @@ export async function updatePersonnelProfile({
           primaryMos: nextPrimaryMos,
           currentStatus: nextStatus,
           goodStanding: nextGoodStanding,
+          separationDate: nextSeparationDate,
+          separationType: nextSeparationType,
+          rehireEligibility: nextRehireEligibility,
+          statusChanged,
+          unitChanged,
+          billetChanged,
           staffSectionIds: nextStaffSectionIds,
         },
         reason: auditReason,
@@ -1477,9 +1646,15 @@ export async function reviewLoaRequest({
     throw error;
   }
 
+  const suppliedReason = normalizeText(reason, 1000);
+  if (status !== "Returned" && !suppliedReason) {
+    const error = new Error("LOA approval and denial actions require an audit reason.");
+    error.statusCode = 400;
+    throw error;
+  }
+
   const reviewReason =
-    normalizeText(reason, 1000) ||
-    (status === "Returned" ? "Member marked approved LOA as returned." : `LOA request ${status.toLowerCase()} from the portal.`);
+    suppliedReason || (status === "Returned" ? "Member marked approved LOA as returned." : `LOA request ${status.toLowerCase()} from the portal.`);
 
   await db.$transaction(async (tx) => {
     await tx.lOARequest.update({
