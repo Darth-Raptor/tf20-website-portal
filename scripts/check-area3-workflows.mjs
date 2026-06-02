@@ -95,8 +95,8 @@ for (const [modelName, fields] of Object.entries(requiredFields)) {
 const trainingRecordBody = modelBody("TrainingRecord");
 assertPattern(/^\s*status\s+RequestStatus\s+@default\(Completed\)/m, "TrainingRecord must default to completed official records.", trainingRecordBody);
 
-if (/\b(role|permission|unit|rank|billet|staffSection|specialty)\.(create|upsert|createMany)\b/i.test(seed)) {
-  fail("Seed file must not create official catalogs while Area 3 workflow planning is unverified by catalog.");
+if (!/catalog-source\.mjs/.test(seed)) {
+  fail("Seed file must read workflow-related catalogs from the authoritative catalog source.");
 }
 
 console.log("Area 3 portal workflow check passed.");

@@ -60,13 +60,8 @@ for (const [modelName, fields] of Object.entries(requiredFields)) {
   }
 }
 
-const seededRoleOrPermission = /\b(role|permission)\.(create|upsert|createMany)\b/i.test(seed);
-if (seededRoleOrPermission) {
-  fail("Seed file must not create official roles or permissions before user verification.");
-}
-
-if (/Applicant|Member|Staff|Command|Admin|Recruiter|applications\.|personnel\.|audit\./.test(seed)) {
-  fail("Seed file contains unverified access catalog values.");
+if (!/catalog-source\.mjs/.test(seed)) {
+  fail("Seed file must read access catalogs from the authoritative catalog source.");
 }
 
 console.log("Area 2 access foundation check passed.");

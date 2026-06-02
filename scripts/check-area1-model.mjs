@@ -81,8 +81,8 @@ if (duplicateFields.length) {
   fail(`Duplicate Prisma model fields found: ${duplicateFields.join(", ")}`);
 }
 
-if (/S1|S2|S3|S4|S6|Ranger|SFOD|SOAR|COL|PVT|Recruiter|Command Staff|System Admin/.test(seed)) {
-  fail("Seed file contains unverified catalog or role values.");
+if (!/catalog-source\.mjs/.test(seed)) {
+  fail("Seed file must read from the authoritative catalog source.");
 }
 
 console.log(`Area 1 model inventory check passed for ${requiredModels.length} models.`);

@@ -2,33 +2,31 @@
 
 ## Current Position
 
-The restart has implemented Area 1, Area 2, and Area 3 foundation work.
+The restart has completed Areas 1 through 6 planning and now includes the
+first implementation phase for authoritative catalog governance.
 
 Implemented:
 
 - clean-slate Prisma model inventory
-- Area 1, Area 2, and Area 3 validation scripts
-- seed script that intentionally avoids unverified catalog values
-- planning docs for the source-of-truth boundary
-- planning docs for identity, roles, access, bootstrap, recovery, sessions, and
-  scoped authorization
-- planning docs for portal workflows, including applications, personnel
-  changes, LOA, attendance, training, service records, support, notifications,
-  and audit
+- Area 1 through Area 6 validation scripts
+- authoritative catalog source for official TF20 catalogs
+- bootstrap seed and future catalog sync path
+- planning docs for source of truth, identity/access, portal workflows,
+  external connections, API/frontend contract, and operations/security/testing
+- smoke validation for restart-branch prerequisites
 
-## Next Planning Areas
+## Next Implementation Areas
 
-1. External connections.
-2. API and frontend contract.
-3. Operations, security, and testing.
-
-Each area must be planned and verified before implementation.
+1. Runtime backend and auth foundation.
+2. Applicant-to-member vertical slice.
+3. Broader protected portal workflow implementation.
 
 ## Non-Negotiables
 
 - The database is the only operational source of truth.
 - The previous build is archive-only.
 - No external roster/import system is planned.
-- Official catalog values must be provided and verified before seeding.
+- Official catalog changes must go through the authoritative catalog source and
+  validation path before seeding or sync.
 - Area 2 access foundations are model and planning artifacts; runtime auth
   endpoints are deferred until API/frontend contract planning.

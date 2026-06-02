@@ -11,12 +11,15 @@ const requiredPaths = [
   path.join(projectRoot, "docs", "external-connections.md"),
   path.join(projectRoot, "docs", "api-frontend-contract.md"),
   path.join(projectRoot, "docs", "operations-security-testing.md"),
+  path.join(projectRoot, "docs", "catalog-governance.md"),
+  path.join(projectRoot, "prisma", "catalog-source.mjs"),
   path.join(projectRoot, "scripts", "check-area1-model.mjs"),
   path.join(projectRoot, "scripts", "check-area2-access.mjs"),
   path.join(projectRoot, "scripts", "check-area3-workflows.mjs"),
   path.join(projectRoot, "scripts", "check-area4-external-connections.mjs"),
   path.join(projectRoot, "scripts", "check-area5-api-frontend-contract.mjs"),
   path.join(projectRoot, "scripts", "check-area6-operations-security-testing.mjs"),
+  path.join(projectRoot, "scripts", "check-catalog-source.mjs"),
 ];
 
 for (const requiredPath of requiredPaths) {

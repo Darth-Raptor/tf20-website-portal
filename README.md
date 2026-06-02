@@ -1,7 +1,7 @@
 # Task Force 20 PMS Restart
 
-This branch is a clean-slate planning and data-model foundation for the Task
-Force 20 Personnel Management System.
+This branch is a clean-slate planning, data-model, and catalog-governance
+foundation for the Task Force 20 Personnel Management System.
 
 The archived previous build is not a source of truth for this restart. Do not
 copy old schema, workflow, catalog, role, route, or deployment decisions into
@@ -26,9 +26,10 @@ Areas 1, 2, 3, 4, 5, and 6 are implemented:
 - Operations, security, and testing foundation for single-VPS plus systemd
   deployment, env-only secrets, daily backups, CI quality gates, smoke
   verification, and incident-response expectations.
-- No official unit, rank, billet, staff-section, MOS, role, or permission
-  catalog values seeded yet.
+- Authoritative catalog source plus bootstrap/sync path for official TF20
+  catalogs and future additive catalog growth.
 - Area 1, Area 2, Area 3, Area 4, Area 5, and Area 6 validation scripts.
+- Catalog source validation and smoke validation scripts.
 
 ## Planning Order
 
@@ -51,6 +52,7 @@ node --check scripts/check-area3-workflows.mjs
 node --check scripts/check-area4-external-connections.mjs
 node --check scripts/check-area5-api-frontend-contract.mjs
 node --check scripts/check-area6-operations-security-testing.mjs
+node --check scripts/check-catalog-source.mjs
 node --check scripts/smoke.mjs
 node scripts/check-area1-model.mjs
 node scripts/check-area2-access.mjs
@@ -58,6 +60,7 @@ node scripts/check-area3-workflows.mjs
 node scripts/check-area4-external-connections.mjs
 node scripts/check-area5-api-frontend-contract.mjs
 node scripts/check-area6-operations-security-testing.mjs
+node scripts/check-catalog-source.mjs
 node scripts/smoke.mjs
 ```
 
@@ -66,7 +69,8 @@ available.
 
 ## Important Boundaries
 
-- Exact catalog values must come from the user in a later verification pass.
+- Catalog values now live in the authoritative source and future additions must
+  go through the same repo-driven validation and sync path.
 - Endpoint-by-endpoint API contracts are deferred to Area 5.
 - Runtime deployment instructions are deferred until operations planning.
 - No external roster/import system is planned.
