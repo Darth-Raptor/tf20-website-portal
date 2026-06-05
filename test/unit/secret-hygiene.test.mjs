@@ -18,7 +18,10 @@ test("secret hygiene detects private key material", () => {
 });
 
 test("secret hygiene detects obvious tracked token files", () => {
-  const findings = scanTextForSecretFindings("newtoken.txt", "f8c15879-f484-4fda-8afc-9bb25a308549");
+  const findings = scanTextForSecretFindings(
+    "newtoken.txt",
+    "f8c15879-f484-4fda-8afc-9bb25a308549",
+  );
 
   assert.equal(findings.length, 1);
   assert.match(findings[0], /token-only/);
