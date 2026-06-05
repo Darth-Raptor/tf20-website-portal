@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 const developmentDatabaseUrl = process.env.DATABASE_URL;
@@ -33,7 +35,7 @@ run(resolveNpxCommand(), [
   "--accept-data-loss",
   "--skip-generate",
 ]);
-run(process.execPath, ["--test", "test/integration/*.test.mjs"]);
+run(process.execPath, ["--test", ...listIntegrationTestFiles()]);
 
 function run(command, args) {
   const result = spawnSync(command, args, {
@@ -53,6 +55,21 @@ function resolveNpxCommand() {
 
 function normalizeUrl(value) {
   return new URL(value).toString();
+}
+
+function listIntegrationTestFiles() {
+  const testDirectory = path.join(process.cwd(), "test", "integration");
+  const files = fs
+    .readdirSync(testDirectory)
+    .filter((fileName) => fileName.endsWith(".test.mjs"))
+    .sort()
+    .map((fileName) => path.join(testDirectory, fileName));
+
+  if (!files.length) {
+    fail("No integration test files were found.");
+  }
+
+  return files;
 }
 
 function fail(message) {
