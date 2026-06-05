@@ -127,47 +127,47 @@ Response bodies use consistent top-level keys:
 The following workflow commands use explicit action endpoints rather than
 generic status writes:
 
-| Workflow command | Endpoint pattern | Actor requirement | Target | Success result | Denial or failure cases |
-| --- | --- | --- | --- | --- | --- |
-| Recruiter recommendation | `POST /applications/{id}/recommend` | Authorized recruiter or staff scope | `Application` | Updated application workflow state | invalid stage, denied scope, blocked account |
-| Target-unit decision | `POST /applications/{id}/decision` | Authorized target-unit staff | `Application` | Accepted, denied, or closed application state | invalid stage, denied scope, missing target-unit authority |
-| Protected personnel update | `PATCH /personnel/{id}` | Authorized staff with scope | `PersonnelProfile` | Updated snapshot plus history/audit-linked state | denied scope, validation failure, recent-auth required |
-| LOA approve | `POST /loa/{id}/approve` | Authorized reviewer | `LoaRequest` | Updated LOA decision state | invalid transition, denied scope, blocked reviewer |
-| LOA deny | `POST /loa/{id}/deny` | Authorized reviewer | `LoaRequest` | Updated LOA decision state | invalid transition, denied scope |
-| LOA withdraw | `POST /loa/{id}/withdraw` | Owner or authorized submitter | `LoaRequest` | Withdrawn LOA state | invalid transition, non-owner denial |
-| LOA cancel or return | `POST /loa/{id}/cancel` and `POST /loa/{id}/return` | Authorized actor per workflow | `LoaRequest` | Updated LOA status window state | invalid transition, denied scope |
-| Attendance finalize | `POST /events/{id}/attendance/finalize` | Event owner or authorized staff | `Event` | Finalized attendance state | event not ready, denied scope |
-| Attendance correction | `POST /attendance/{id}/correct` | Authorized staff | `EventAttendance` | Corrected attendance with reason | missing reason, denied scope, locked correction rules |
-| Support assign | `POST /support/{id}/assign` | Authorized staff | `SupportTicket` | Assigned ticket state | denied scope, invalid state |
-| Support resolve, close, or void | `POST /support/{id}/resolve`, `POST /support/{id}/close`, `POST /support/{id}/void` | Authorized staff | `SupportTicket` | Updated retained ticket state | invalid transition, denied scope |
-| Recovery review and complete | `POST /access/recovery/{id}/approve`, `POST /access/recovery/{id}/deny`, `POST /access/recovery/{id}/complete` | Authorized recovery reviewer or completer | `AccountRecoveryRequest` | Updated recovery state | invalid transition, denied scope |
-| Session revoke or global revoke | `POST /access/sessions/{id}/revoke` and `POST /access/sessions/revoke-all` | Authorized security or admin actor | `Session` or session scope | Session revocation result | recent-auth required, denied scope |
+| Workflow command                | Endpoint pattern                                                                                               | Actor requirement                         | Target                     | Success result                                   | Denial or failure cases                                    |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------- | -------------------------- | ------------------------------------------------ | ---------------------------------------------------------- |
+| Recruiter recommendation        | `POST /applications/{id}/recommend`                                                                            | Authorized recruiter or staff scope       | `Application`              | Updated application workflow state               | invalid stage, denied scope, blocked account               |
+| Target-unit decision            | `POST /applications/{id}/decision`                                                                             | Authorized target-unit staff              | `Application`              | Accepted, denied, or closed application state    | invalid stage, denied scope, missing target-unit authority |
+| Protected personnel update      | `PATCH /personnel/{id}`                                                                                        | Authorized staff with scope               | `PersonnelProfile`         | Updated snapshot plus history/audit-linked state | denied scope, validation failure, recent-auth required     |
+| LOA approve                     | `POST /loa/{id}/approve`                                                                                       | Authorized reviewer                       | `LoaRequest`               | Updated LOA decision state                       | invalid transition, denied scope, blocked reviewer         |
+| LOA deny                        | `POST /loa/{id}/deny`                                                                                          | Authorized reviewer                       | `LoaRequest`               | Updated LOA decision state                       | invalid transition, denied scope                           |
+| LOA withdraw                    | `POST /loa/{id}/withdraw`                                                                                      | Owner or authorized submitter             | `LoaRequest`               | Withdrawn LOA state                              | invalid transition, non-owner denial                       |
+| LOA cancel or return            | `POST /loa/{id}/cancel` and `POST /loa/{id}/return`                                                            | Authorized actor per workflow             | `LoaRequest`               | Updated LOA status window state                  | invalid transition, denied scope                           |
+| Attendance finalize             | `POST /events/{id}/attendance/finalize`                                                                        | Event owner or authorized staff           | `Event`                    | Finalized attendance state                       | event not ready, denied scope                              |
+| Attendance correction           | `POST /attendance/{id}/correct`                                                                                | Authorized staff                          | `EventAttendance`          | Corrected attendance with reason                 | missing reason, denied scope, locked correction rules      |
+| Support assign                  | `POST /support/{id}/assign`                                                                                    | Authorized staff                          | `SupportTicket`            | Assigned ticket state                            | denied scope, invalid state                                |
+| Support resolve, close, or void | `POST /support/{id}/resolve`, `POST /support/{id}/close`, `POST /support/{id}/void`                            | Authorized staff                          | `SupportTicket`            | Updated retained ticket state                    | invalid transition, denied scope                           |
+| Recovery review and complete    | `POST /access/recovery/{id}/approve`, `POST /access/recovery/{id}/deny`, `POST /access/recovery/{id}/complete` | Authorized recovery reviewer or completer | `AccountRecoveryRequest`   | Updated recovery state                           | invalid transition, denied scope                           |
+| Session revoke or global revoke | `POST /access/sessions/{id}/revoke` and `POST /access/sessions/revoke-all`                                     | Authorized security or admin actor        | `Session` or session scope | Session revocation result                        | recent-auth required, denied scope                         |
 
 ## Screen Contract Matrix
 
 ### Protected Portal Screens
 
-| Screen | Initial read contract | Allowed actions | Minimum account status | Permission or scope gate |
-| --- | --- | --- | --- | --- |
-| Dashboard | `/me`, summary reads for visible modules | Contextual workflow actions only through module-specific endpoints | `Active` unless limited pending view is defined | Server-computed module visibility |
-| Profile / self view | `/me`, optional `/me/personnel` detail | No protected direct self-write in Area 5 | `Pending` or `Active` depending on linked records | Self only |
-| Personnel management | `/personnel/*` lists and detail reads | Protected personnel `PATCH`, staff notes/history commands in later implementation | `Active` | Staff or command scope |
-| LOA | `/loa/*` plus self or scoped queue reads | submit, approve, deny, withdraw, cancel, return | `Pending` for limited self flow where allowed, otherwise `Active` | Self or scoped reviewer |
-| Events and attendance | `/events/*`, `/attendance/*` | roster setup, finalize, correction, attendance review | `Active` | Staff or event scope; self read for member attendance |
-| Training and qualifications | `/training/*`, `/qualifications/*` | trainer-owned record actions and qualification updates | `Active` | Authorized trainer or staff scope |
-| Promotions and awards | `/promotions/*`, `/awards/*` | request, approve, record creation actions | `Active` | Authorized staff scope |
-| Support | `/support/*` | create, comment, assign, resolve, close, void | `Pending` or `Active` based on ticket type | Self or staff queue scope |
-| Notifications | `/notifications/*` | acknowledge, archive | `Pending` or `Active` | Self only |
-| Audit / access screens | `/audit/*`, `/access/*`, `/bootstrap/*` | review, revoke, approve, complete, bootstrap actions | `Active` | Restricted admin or security scope |
+| Screen                      | Initial read contract                    | Allowed actions                                                                   | Minimum account status                                            | Permission or scope gate                              |
+| --------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------- |
+| Dashboard                   | `/me`, summary reads for visible modules | Contextual workflow actions only through module-specific endpoints                | `Active` unless limited pending view is defined                   | Server-computed module visibility                     |
+| Profile / self view         | `/me`, optional `/me/personnel` detail   | No protected direct self-write in Area 5                                          | `Pending` or `Active` depending on linked records                 | Self only                                             |
+| Personnel management        | `/personnel/*` lists and detail reads    | Protected personnel `PATCH`, staff notes/history commands in later implementation | `Active`                                                          | Staff or command scope                                |
+| LOA                         | `/loa/*` plus self or scoped queue reads | submit, approve, deny, withdraw, cancel, return                                   | `Pending` for limited self flow where allowed, otherwise `Active` | Self or scoped reviewer                               |
+| Events and attendance       | `/events/*`, `/attendance/*`             | roster setup, finalize, correction, attendance review                             | `Active`                                                          | Staff or event scope; self read for member attendance |
+| Training and qualifications | `/training/*`, `/qualifications/*`       | trainer-owned record actions and qualification updates                            | `Active`                                                          | Authorized trainer or staff scope                     |
+| Promotions and awards       | `/promotions/*`, `/awards/*`             | request, approve, record creation actions                                         | `Active`                                                          | Authorized staff scope                                |
+| Support                     | `/support/*`                             | create, comment, assign, resolve, close, void                                     | `Pending` or `Active` based on ticket type                        | Self or staff queue scope                             |
+| Notifications               | `/notifications/*`                       | acknowledge, archive                                                              | `Pending` or `Active`                                             | Self only                                             |
+| Audit / access screens      | `/audit/*`, `/access/*`, `/bootstrap/*`  | review, revoke, approve, complete, bootstrap actions                              | `Active`                                                          | Restricted admin or security scope                    |
 
 ### Pending-User And Applicant Screens
 
-| Screen | Initial read contract | Allowed actions | Blocked states |
-| --- | --- | --- | --- |
+| Screen                              | Initial read contract                           | Allowed actions                                                 | Blocked states                           |
+| ----------------------------------- | ----------------------------------------------- | --------------------------------------------------------------- | ---------------------------------------- |
 | Application status / applicant flow | `/applications/mine` or applicant-scoped detail | submit application, view status, limited note/status visibility | not in guild, locked, disabled, archived |
-| Limited support | `/support/*` intake-only or own tickets | create intake ticket, view own tickets, comment where allowed | not in guild, disabled, archived |
-| Recovery access | `/access/recovery/*` | request recovery, view own recovery state | disabled by policy, archived |
-| Pending gate screen | `/me` or `/auth/session` gate result | no workflow actions beyond allowed pending functions | not in guild, locked, disabled |
+| Limited support                     | `/support/*` intake-only or own tickets         | create intake ticket, view own tickets, comment where allowed   | not in guild, disabled, archived         |
+| Recovery access                     | `/access/recovery/*`                            | request recovery, view own recovery state                       | disabled by policy, archived             |
+| Pending gate screen                 | `/me` or `/auth/session` gate result            | no workflow actions beyond allowed pending functions            | not in guild, locked, disabled           |
 
 For every screen contract, the frontend must receive:
 

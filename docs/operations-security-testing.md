@@ -21,11 +21,16 @@ verification.
   plaintext local files in git-managed workflows.
 - Discord, session, database, bootstrap, and future Steam secrets must rotate
   when exposed or suspected exposed.
+- Committed or suspected committed SSH keys, token files, and private-key
+  material are treated as compromised even if no misuse is observed.
 - Legacy runtime integrations remain fully excluded from deployment, recovery,
   monitoring, and operations design.
 - The authoritative minimum automated gate is:
   - planning validators
   - Prisma client generation
+  - Prisma schema validation
+  - lint and format checks
+  - formal unit and integration tests
   - lightweight smoke verification
 - Deploy failure at checks, smoke, or post-deploy verification blocks
   promotion and requires rollback or service restore action.
@@ -92,9 +97,25 @@ Real values remain outside git. Example placeholders may exist in
 
 - secret or token pasted in chat or ticket
 - secret committed or suspected committed to git
+- SSH private key committed or suspected committed to git
 - credential copied to an unauthorized host or file
 - suspected account compromise
 - provider-side notice of exposure or misuse
+
+### SSH Key Exposure Response
+
+- remove the exposed key file from the repo
+- scrub it from git history before normal development continues
+- force-push the rewritten protected branch only after checks pass
+- remove the exposed public key from all VPS, GitHub, and service access lists
+- generate a replacement SSH key outside the repo
+- document the rotation in the incident notes or operations log
+
+### Recent-Auth Review
+
+The local default `RECENT_AUTH_WINDOW_MINUTES=15` remains acceptable for the
+current development baseline. Phase 10 must explicitly review this value
+against the production threat model before deployment.
 
 ### Incident Categories
 
@@ -133,12 +154,29 @@ Real values remain outside git. Example placeholders may exist in
 
 - install dependencies
 - generate Prisma client
+- validate the Prisma schema
+- verify the generated catalog source is current
+- run lint and format checks
+- run unit tests
+- run MySQL-backed integration tests against `TEST_DATABASE_URL`
 - run the repository validation command
 - run smoke verification
 
 The branch-supported CI floor must match the actual scripts present in the
 restart branch. Stale workflow steps that call undefined scripts are not part
 of the Area 6 contract.
+
+Integration tests must refuse to run when `TEST_DATABASE_URL` is missing, when
+it matches `DATABASE_URL`, or when the target database name does not clearly
+identify itself as a test/CI database.
+
+### HTTPS And Reverse Proxy Contract
+
+Phase 10 must add the production reverse proxy configuration before final
+deployment. The default VPS plan is Caddy in front of the systemd-managed Node
+service so HTTPS certificates, redirects, and proxy headers are handled
+outside the Express process. Express keeps `TRUST_PROXY=true` only when the
+proxy is configured.
 
 ### Smoke Verification Contract
 

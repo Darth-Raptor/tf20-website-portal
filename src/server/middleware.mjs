@@ -62,7 +62,8 @@ export function buildRequestContextMiddleware({ prisma, config }) {
         session,
         account: session.account,
         authIdentity:
-          session.account.authIdentities.find((identity) => identity.provider === "Discord") ?? null,
+          session.account.authIdentities.find((identity) => identity.provider === "Discord") ??
+          null,
       };
       return next();
     } catch (error) {

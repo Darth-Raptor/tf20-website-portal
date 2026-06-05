@@ -26,7 +26,11 @@ const requiredPaths = [
   path.join(projectRoot, "scripts", "check-area6-operations-security-testing.mjs"),
   path.join(projectRoot, "scripts", "check-catalog-source.mjs"),
   path.join(projectRoot, "scripts", "check-phase2-review-csvs.mjs"),
+  path.join(projectRoot, "scripts", "check-secret-hygiene.mjs"),
   path.join(projectRoot, "scripts", "generate-phase2-catalog-source.mjs"),
+  path.join(projectRoot, "scripts", "run-integration-tests.mjs"),
+  path.join(projectRoot, "test", "unit", "secret-hygiene.test.mjs"),
+  path.join(projectRoot, "test", "integration", "runtime.integration.test.mjs"),
   path.join(projectRoot, "src", "server", "application-service.mjs"),
   path.join(projectRoot, "src", "server", "personnel-service.mjs"),
   path.join(projectRoot, "src", "server", "index.mjs"),
@@ -59,7 +63,13 @@ console.log("Smoke check passed for restart-branch boot prerequisites.");
 
 async function runRuntimeSmoke() {
   const expressPackage = path.join(projectRoot, "node_modules", "express", "package.json");
-  const prismaClientPackage = path.join(projectRoot, "node_modules", "@prisma", "client", "package.json");
+  const prismaClientPackage = path.join(
+    projectRoot,
+    "node_modules",
+    "@prisma",
+    "client",
+    "package.json",
+  );
   if (!fs.existsSync(expressPackage) || !fs.existsSync(prismaClientPackage)) {
     console.log("Smoke skipped runtime boot because local dependencies are not installed.");
     return;
@@ -115,7 +125,7 @@ async function waitForBoot(child, initialOutput) {
     return true;
   }
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const timeout = setTimeout(() => {
       cleanup();
       resolve(false);

@@ -34,7 +34,14 @@ for (const phrase of requiredDocPhrases) {
   }
 }
 
-for (const modelName of ["Session", "SessionRevocation", "AccountRecoveryRequest", "AccessBootstrap", "AuditLog", "IntegrationLog"]) {
+for (const modelName of [
+  "Session",
+  "SessionRevocation",
+  "AccountRecoveryRequest",
+  "AccessBootstrap",
+  "AuditLog",
+  "IntegrationLog",
+]) {
   requireModel(modelName);
 }
 
@@ -73,9 +80,20 @@ if (!packageJson.scripts?.smoke) {
   fail("package.json must define the Area 6 smoke script.");
 }
 
+for (const scriptName of ["lint", "format:check", "test", "test:integration", "secret:check"]) {
+  if (!packageJson.scripts?.[scriptName]) {
+    fail(`package.json must define the strengthened quality script ${scriptName}.`);
+  }
+}
+
 const requiredWorkflowSnippets = [
-  "npm install",
+  "npm ci",
   "npm run prisma:generate",
+  "npm run prisma:validate",
+  "npm run format:check",
+  "npm run lint",
+  "npm run test",
+  "npm run test:integration",
   "npm run check",
   "npm run smoke",
 ];
@@ -119,7 +137,9 @@ function requireField(modelName, fieldName, fieldType) {
 }
 
 function getBlockBody(schemaText, blockType, blockName) {
-  const match = new RegExp(`^${blockType}\\s+${blockName}\\s+\\{([\\s\\S]*?)^}`, "m").exec(schemaText);
+  const match = new RegExp(`^${blockType}\\s+${blockName}\\s+\\{([\\s\\S]*?)^}`, "m").exec(
+    schemaText,
+  );
   if (!match) fail(`Missing ${blockType} ${blockName}`);
   return match[1];
 }

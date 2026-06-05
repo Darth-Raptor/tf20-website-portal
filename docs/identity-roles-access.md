@@ -2,8 +2,9 @@
 
 ## Summary
 
-Area 2 defines access foundations only. Official role names, permission keys,
-staff titles, and catalog values remain unseeded until the user verifies them.
+Area 2 defines access foundations. Official role names, permission keys,
+staff titles, and catalog values are now verified through the Phase 2 catalog
+source and validation pipeline.
 
 The previous build remains archive-only. Do not import its roles, permissions,
 routes, or workflows.
@@ -45,8 +46,8 @@ routes, or workflows.
 
 ## Permission Namespace Plan
 
-Exact permission keys are not seeded yet. The future verified permission list
-must use this shape:
+Verified permission keys are seeded from the Phase 2 catalog source and use
+this namespace shape:
 
 - `accounts.*`
 - `access.*`
@@ -63,7 +64,7 @@ must use this shape:
 - `notifications.*`
 - `integrations.*`
 
-Sensitive categories must be planned before seeding permissions:
+Sensitive categories are seeded through the approved permission catalog:
 
 - identity
 - recovery
@@ -92,4 +93,5 @@ Sensitive categories must be planned before seeding permissions:
 ## Validation
 
 Use `scripts/check-area2-access.mjs` to confirm the Area 2 access models and
-metadata fields exist without seeding official roles or permission keys.
+metadata fields exist, and use the catalog validators to verify the seeded
+role and permission definitions.

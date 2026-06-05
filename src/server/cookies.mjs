@@ -13,10 +13,7 @@ export function parseCookies(headerValue) {
 }
 
 export function signCookieValue(value, secret) {
-  const signature = crypto
-    .createHmac("sha256", secret)
-    .update(value)
-    .digest("base64url");
+  const signature = crypto.createHmac("sha256", secret).update(value).digest("base64url");
   return `${value}.${signature}`;
 }
 
@@ -27,10 +24,7 @@ export function verifySignedCookieValue(value, secret) {
 
   const payload = value.slice(0, separatorIndex);
   const signature = value.slice(separatorIndex + 1);
-  const expected = crypto
-    .createHmac("sha256", secret)
-    .update(payload)
-    .digest("base64url");
+  const expected = crypto.createHmac("sha256", secret).update(payload).digest("base64url");
 
   const isMatch = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
   return isMatch ? payload : null;

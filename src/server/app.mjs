@@ -91,22 +91,30 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       const access = buildAccessContext({ account: req.context.account, permissions });
 
       if (access.gateState === "pending") {
-        return res.status(200).send(renderPendingScreen(buildSessionSummary({
-          account: req.context.account,
-          session: req.context.session,
-          authIdentity: req.context.authIdentity,
-        })));
+        return res.status(200).send(
+          renderPendingScreen(
+            buildSessionSummary({
+              account: req.context.account,
+              session: req.context.session,
+              authIdentity: req.context.authIdentity,
+            }),
+          ),
+        );
       }
 
       if (access.gateState !== "active") {
         return res.status(200).send(renderBlockedScreen(access.gateState));
       }
 
-      return res.status(200).send(renderAuthenticatedScreen(buildSessionSummary({
-        account: req.context.account,
-        session: req.context.session,
-        authIdentity: req.context.authIdentity,
-      })));
+      return res.status(200).send(
+        renderAuthenticatedScreen(
+          buildSessionSummary({
+            account: req.context.account,
+            session: req.context.session,
+            authIdentity: req.context.authIdentity,
+          }),
+        ),
+      );
     } catch (error) {
       return next(error);
     }
@@ -146,9 +154,7 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
         ?.join("=")
         ?.trim();
 
-      const expectedState = signedState
-        ? signCookieValue(state, config.sessionSecret)
-        : null;
+      const expectedState = signedState ? signCookieValue(state, config.sessionSecret) : null;
 
       if (!signedState || signedState !== expectedState) {
         return sendError(res, 400, "invalid_oauth_state", "OAuth state verification failed.");
@@ -186,7 +192,6 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
 
       const resolved = await resolveAuthenticatedAccount({
         prisma,
-        config,
         discordUser,
         guildPayload: guildVerification.payload,
       });
@@ -216,14 +221,10 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
 
       appendCookie(
         res,
-        buildCookie(
-          config.sessionCookieName,
-          signCookieValue(session.id, config.sessionSecret),
-          {
-            secure: config.isProduction,
-            maxAgeSeconds: config.sessionTtlDays * 24 * 60 * 60,
-          },
-        ),
+        buildCookie(config.sessionCookieName, signCookieValue(session.id, config.sessionSecret), {
+          secure: config.isProduction,
+          maxAgeSeconds: config.sessionTtlDays * 24 * 60 * 60,
+        }),
       );
 
       if (resolved.account.status === "Pending") {
@@ -269,9 +270,7 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
 
   app.post("/auth/recent-auth", requireAuthenticatedSession, async (req, res, next) => {
     try {
-      const recentAuthExpiresAt = new Date(
-        Date.now() + config.recentAuthWindowMinutes * 60 * 1000,
-      );
+      const recentAuthExpiresAt = new Date(Date.now() + config.recentAuthWindowMinutes * 60 * 1000);
 
       const session = await prisma.session.update({
         where: { id: req.context.session.id },
@@ -323,37 +322,51 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
     });
   });
 
-  app.get(["/applications/me", "/applications/mine"], requireAuthenticatedSession, async (req, res, next) => {
-    try {
-      if (!canCreateOwnApplication(req.context.account) && !canViewOwnApplication(req.context.account)) {
-        return sendError(res, 403, "permission_denied", "Application self-service is not available.");
+  app.get(
+    ["/applications/me", "/applications/mine"],
+    requireAuthenticatedSession,
+    async (req, res, next) => {
+      try {
+        if (
+          !canCreateOwnApplication(req.context.account) &&
+          !canViewOwnApplication(req.context.account)
+        ) {
+          return sendError(
+            res,
+            403,
+            "permission_denied",
+            "Application self-service is not available.",
+          );
+        }
+
+        const [application, units] = await Promise.all([
+          getOwnApplication(prisma, req.context.account.id),
+          getApplicationUnits(prisma),
+        ]);
+        const summary = buildSessionSummary({
+          account: req.context.account,
+          session: req.context.session,
+          authIdentity: req.context.authIdentity,
+        });
+
+        if (isHtmlRequest(req)) {
+          return res.status(200).send(
+            renderOwnApplicationScreen({
+              summary,
+              application,
+              units,
+              formState: applicantFormState(),
+              errorMessage: null,
+            }),
+          );
+        }
+
+        return sendDetail(res, { application, units });
+      } catch (error) {
+        return next(error);
       }
-
-      const [application, units] = await Promise.all([
-        getOwnApplication(prisma, req.context.account.id),
-        getApplicationUnits(prisma),
-      ]);
-      const summary = buildSessionSummary({
-        account: req.context.account,
-        session: req.context.session,
-        authIdentity: req.context.authIdentity,
-      });
-
-      if (isHtmlRequest(req)) {
-        return res.status(200).send(renderOwnApplicationScreen({
-          summary,
-          application,
-          units,
-          formState: applicantFormState(),
-          errorMessage: null,
-        }));
-      }
-
-      return sendDetail(res, { application, units });
-    } catch (error) {
-      return next(error);
-    }
-  });
+    },
+  );
 
   app.get("/personnel/self", requireAuthenticatedSession, async (req, res, next) => {
     try {
@@ -390,10 +403,20 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       ]);
 
       if (!listResult.ok) {
-        return sendError(res, listResult.code === "permission_denied" ? 403 : 400, listResult.code, listResult.message);
+        return sendError(
+          res,
+          listResult.code === "permission_denied" ? 403 : 400,
+          listResult.code,
+          listResult.message,
+        );
       }
       if (!unitResult.ok) {
-        return sendError(res, unitResult.code === "permission_denied" ? 403 : 400, unitResult.code, unitResult.message);
+        return sendError(
+          res,
+          unitResult.code === "permission_denied" ? 403 : 400,
+          unitResult.code,
+          unitResult.message,
+        );
       }
 
       const summary = buildSessionSummary({
@@ -403,16 +426,18 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       });
 
       if (isHtmlRequest(req)) {
-        return res.status(200).send(renderPersonnelRosterScreen({
-          summary,
-          items: listResult.items,
-          units: unitResult.units,
-          filters: {
-            status: String(req.query.status ?? ""),
-            unitId: String(req.query.unitId ?? ""),
-          },
-          errorMessage: null,
-        }));
+        return res.status(200).send(
+          renderPersonnelRosterScreen({
+            summary,
+            items: listResult.items,
+            units: unitResult.units,
+            filters: {
+              status: String(req.query.status ?? ""),
+              unitId: String(req.query.unitId ?? ""),
+            },
+            errorMessage: null,
+          }),
+        );
       }
 
       return res.status(200).json({
@@ -441,12 +466,22 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       ]);
 
       if (!listResult.ok) {
-        return sendError(res, listResult.code === "permission_denied" ? 403 : 400, listResult.code, listResult.message);
+        return sendError(
+          res,
+          listResult.code === "permission_denied" ? 403 : 400,
+          listResult.code,
+          listResult.message,
+        );
       }
 
       const canViewTarget = listResult.items.some((item) => item.id === profile.id);
       if (!canViewTarget) {
-        return sendError(res, 403, "permission_denied", "This personnel profile is outside your view scope.");
+        return sendError(
+          res,
+          403,
+          "permission_denied",
+          "This personnel profile is outside your view scope.",
+        );
       }
 
       const summary = buildSessionSummary({
@@ -456,14 +491,16 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       });
 
       if (isHtmlRequest(req)) {
-        return res.status(200).send(renderPersonnelDetailScreen({
-          summary,
-          profile,
-          lookups,
-          canUpdate: canUpdateScopedPersonnel(req.context.account),
-          formState: buildPersonnelFormState(profile),
-          errorMessage: null,
-        }));
+        return res.status(200).send(
+          renderPersonnelDetailScreen({
+            summary,
+            profile,
+            lookups,
+            canUpdate: canUpdateScopedPersonnel(req.context.account),
+            formState: buildPersonnelFormState(profile),
+            errorMessage: null,
+          }),
+        );
       }
 
       return sendDetail(res, profile);
@@ -549,16 +586,23 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
             session: req.context.session,
             authIdentity: req.context.authIdentity,
           });
-          return res.status(400).send(renderOwnApplicationScreen({
-            summary,
-            application,
-            units,
-            formState: applicantFormState(req.body),
-            errorMessage: result.message,
-          }));
+          return res.status(400).send(
+            renderOwnApplicationScreen({
+              summary,
+              application,
+              units,
+              formState: applicantFormState(req.body),
+              errorMessage: result.message,
+            }),
+          );
         }
 
-        return sendError(res, result.code === "permission_denied" ? 403 : 400, result.code, result.message);
+        return sendError(
+          res,
+          result.code === "permission_denied" ? 403 : 400,
+          result.code,
+          result.message,
+        );
       }
 
       if (isHtmlRequest(req)) {
@@ -574,7 +618,12 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
   app.get("/applications/review", requireAuthenticatedSession, async (req, res, next) => {
     try {
       if (!canRecruiterReview(req.context.account) && !canTargetUnitReview(req.context.account)) {
-        return sendError(res, 403, "permission_denied", "Application review permission is required.");
+        return sendError(
+          res,
+          403,
+          "permission_denied",
+          "Application review permission is required.",
+        );
       }
 
       const applications = await listReviewQueue(prisma, req.context.account);
@@ -585,11 +634,13 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       });
 
       if (isHtmlRequest(req)) {
-        return res.status(200).send(renderApplicationReviewQueueScreen({
-          summary,
-          applications,
-          errorMessage: null,
-        }));
+        return res.status(200).send(
+          renderApplicationReviewQueueScreen({
+            summary,
+            applications,
+            errorMessage: null,
+          }),
+        );
       }
 
       return res.status(200).json({
@@ -627,14 +678,16 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
 
       if (isHtmlRequest(req) && !isOwner) {
         const units = await getApplicationUnits(prisma);
-        return res.status(200).send(renderApplicationReviewDetailScreen({
-          summary,
-          application,
-          units,
-          canRecruiterReview: canRecruiterReview(req.context.account),
-          canTargetUnitReview: canTargetUnitReview(req.context.account),
-          errorMessage: null,
-        }));
+        return res.status(200).send(
+          renderApplicationReviewDetailScreen({
+            summary,
+            application,
+            units,
+            canRecruiterReview: canRecruiterReview(req.context.account),
+            canTargetUnitReview: canTargetUnitReview(req.context.account),
+            errorMessage: null,
+          }),
+        );
       }
 
       return sendDetail(res, application);
@@ -659,7 +712,16 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       });
 
       if (!result.ok) {
-        return handleApplicationActionFailure({ req, res, prisma, result, applicationId: req.params.id, account: req.context.account, session: req.context.session, authIdentity: req.context.authIdentity });
+        return handleApplicationActionFailure({
+          req,
+          res,
+          prisma,
+          result,
+          applicationId: req.params.id,
+          account: req.context.account,
+          session: req.context.session,
+          authIdentity: req.context.authIdentity,
+        });
       }
 
       if (isHtmlRequest(req)) {
@@ -689,7 +751,16 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       });
 
       if (!result.ok) {
-        return handleApplicationActionFailure({ req, res, prisma, result, applicationId: req.params.id, account: req.context.account, session: req.context.session, authIdentity: req.context.authIdentity });
+        return handleApplicationActionFailure({
+          req,
+          res,
+          prisma,
+          result,
+          applicationId: req.params.id,
+          account: req.context.account,
+          session: req.context.session,
+          authIdentity: req.context.authIdentity,
+        });
       }
 
       if (isHtmlRequest(req)) {
@@ -718,7 +789,16 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       });
 
       if (!result.ok) {
-        return handleApplicationActionFailure({ req, res, prisma, result, applicationId: req.params.id, account: req.context.account, session: req.context.session, authIdentity: req.context.authIdentity });
+        return handleApplicationActionFailure({
+          req,
+          res,
+          prisma,
+          result,
+          applicationId: req.params.id,
+          account: req.context.account,
+          session: req.context.session,
+          authIdentity: req.context.authIdentity,
+        });
       }
 
       if (isHtmlRequest(req)) {
@@ -747,7 +827,16 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       });
 
       if (!result.ok) {
-        return handleApplicationActionFailure({ req, res, prisma, result, applicationId: req.params.id, account: req.context.account, session: req.context.session, authIdentity: req.context.authIdentity });
+        return handleApplicationActionFailure({
+          req,
+          res,
+          prisma,
+          result,
+          applicationId: req.params.id,
+          account: req.context.account,
+          session: req.context.session,
+          authIdentity: req.context.authIdentity,
+        });
       }
 
       if (isHtmlRequest(req)) {
@@ -763,7 +852,12 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
   if (!config.isProduction) {
     app.post("/_local/shutdown", (req, res) => {
       if (!isLoopbackRequest(req.ip)) {
-        return sendError(res, 403, "permission_denied", "Local shutdown is only available from loopback.");
+        return sendError(
+          res,
+          403,
+          "permission_denied",
+          "Local shutdown is only available from loopback.",
+        );
       }
 
       res.status(202).json({
@@ -782,7 +876,7 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
     });
   }
 
-  app.use((error, req, res, next) => {
+  app.use((error, req, res, _next) => {
     console.error(error);
     return sendError(
       res,
@@ -809,7 +903,7 @@ function buildPersonnelFormState(profileOrBody = {}) {
     currentBilletId: String(source.currentBilletId ?? ""),
     currentMOSId: String(source.currentMOSId ?? ""),
     goodStanding: String(
-      typeof source.goodStanding === "boolean" ? source.goodStanding : source.goodStanding ?? "",
+      typeof source.goodStanding === "boolean" ? source.goodStanding : (source.goodStanding ?? ""),
     ),
     reason: String(source.reason ?? ""),
   };
@@ -826,9 +920,13 @@ async function handleApplicationActionFailure({
   authIdentity,
 }) {
   const statusCode =
-    result.code === "permission_denied" ? 403 :
-    result.code === "not_found" ? 404 :
-    result.code === "configuration_error" ? 500 : 400;
+    result.code === "permission_denied"
+      ? 403
+      : result.code === "not_found"
+        ? 404
+        : result.code === "configuration_error"
+          ? 500
+          : 400;
 
   if (!isHtmlRequest(req)) {
     return sendError(res, statusCode, result.code, result.message);
@@ -844,14 +942,16 @@ async function handleApplicationActionFailure({
   }
 
   const summary = buildSessionSummary({ account, session, authIdentity });
-  return res.status(statusCode).send(renderApplicationReviewDetailScreen({
-    summary,
-    application,
-    units,
-    canRecruiterReview: canRecruiterReview(account),
-    canTargetUnitReview: canTargetUnitReview(account),
-    errorMessage: result.message,
-  }));
+  return res.status(statusCode).send(
+    renderApplicationReviewDetailScreen({
+      summary,
+      application,
+      units,
+      canRecruiterReview: canRecruiterReview(account),
+      canTargetUnitReview: canTargetUnitReview(account),
+      errorMessage: result.message,
+    }),
+  );
 }
 
 async function handlePersonnelActionFailure({
@@ -866,8 +966,7 @@ async function handlePersonnelActionFailure({
   body,
 }) {
   const statusCode =
-    result.code === "permission_denied" ? 403 :
-    result.code === "not_found" ? 404 : 400;
+    result.code === "permission_denied" ? 403 : result.code === "not_found" ? 404 : 400;
 
   if (!isHtmlRequest(req)) {
     return sendError(res, statusCode, result.code, result.message);
@@ -883,12 +982,14 @@ async function handlePersonnelActionFailure({
   }
 
   const summary = buildSessionSummary({ account, session, authIdentity });
-  return res.status(statusCode).send(renderPersonnelDetailScreen({
-    summary,
-    profile,
-    lookups,
-    canUpdate: canUpdateScopedPersonnel(account),
-    formState: buildPersonnelFormState(body),
-    errorMessage: result.message,
-  }));
+  return res.status(statusCode).send(
+    renderPersonnelDetailScreen({
+      summary,
+      profile,
+      lookups,
+      canUpdate: canUpdateScopedPersonnel(account),
+      formState: buildPersonnelFormState(body),
+      errorMessage: result.message,
+    }),
+  );
 }

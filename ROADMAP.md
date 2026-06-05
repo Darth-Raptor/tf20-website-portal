@@ -134,6 +134,8 @@ Completion target:
 
 - run full local acceptance across all completed modules
 - update deployment and operations materials to match the finished runtime
+- add Caddy HTTPS reverse-proxy configuration for the single-VPS deployment
+- review `RECENT_AUTH_WINDOW_MINUTES=15` against the production threat model
 - produce the final release candidate
 
 ## Phase 11: Single Final Production Deployment

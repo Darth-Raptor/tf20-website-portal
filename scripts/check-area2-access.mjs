@@ -37,11 +37,23 @@ const requiredFields = {
     "completedBootstraps",
   ],
   AuthIdentity: ["lastGuildVerifiedAt", "guildMembershipRequired"],
-  Session: ["lastAuthenticatedAt", "recentAuthExpiresAt", "revokedAt", "revokedByAccountId", "revocationReason"],
+  Session: [
+    "lastAuthenticatedAt",
+    "recentAuthExpiresAt",
+    "revokedAt",
+    "revokedByAccountId",
+    "revocationReason",
+  ],
   Permission: ["module", "action", "sensitiveCategory", "requiresRecentAuth"],
   RoleAssignment: ["scopeType", "scopeIncludesDescendants", "unitId", "staffSectionId"],
   AccountRecoveryRequest: ["reviewedById", "completedById", "requestedIdentity", "decisionNote"],
-  AccessBootstrap: ["configuredDiscordIdHash", "setupScope", "verifiedAt", "completedAt", "expiresAt"],
+  AccessBootstrap: [
+    "configuredDiscordIdHash",
+    "setupScope",
+    "verifiedAt",
+    "completedAt",
+    "expiresAt",
+  ],
   SessionRevocation: ["scope", "targetAccountId", "issuedByAccountId", "reason"],
 };
 
@@ -50,13 +62,20 @@ for (const enumName of requiredEnums) {
 }
 
 for (const modelName of requiredModels) {
-  assertPattern(new RegExp(`^model\\s+${modelName}\\s+\\{`, "m"), `Missing Area 2 model ${modelName}`);
+  assertPattern(
+    new RegExp(`^model\\s+${modelName}\\s+\\{`, "m"),
+    `Missing Area 2 model ${modelName}`,
+  );
 }
 
 for (const [modelName, fields] of Object.entries(requiredFields)) {
   const body = modelBody(modelName);
   for (const field of fields) {
-    assertPattern(new RegExp(`^\\s*${field}\\s+`, "m"), `Missing Area 2 field ${modelName}.${field}`, body);
+    assertPattern(
+      new RegExp(`^\\s*${field}\\s+`, "m"),
+      `Missing Area 2 field ${modelName}.${field}`,
+      body,
+    );
   }
 }
 

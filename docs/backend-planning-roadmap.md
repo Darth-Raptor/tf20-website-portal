@@ -16,12 +16,12 @@ The active implementation roadmap now lives in `ROADMAP.md`.
 Implementation markers kept for validator compatibility:
 
 - 4. External connections: implemented in `docs/external-connections.md` and
-  encoded in `prisma/schema.prisma`
+     encoded in `prisma/schema.prisma`
 - 5. API and frontend contract: implemented in
-  `docs/api-frontend-contract.md` and encoded in `prisma/schema.prisma`
+     `docs/api-frontend-contract.md` and encoded in `prisma/schema.prisma`
 - 6. Operations, security, and testing: implemented in
-  `docs/operations-security-testing.md` and encoded in repo scripts, env
-  contract, and runtime expectations
+     `docs/operations-security-testing.md` and encoded in repo scripts, env
+     contract, and runtime expectations
 
 1. Source of truth and data model
    - implemented in `docs/source-of-truth-data-model.md` and

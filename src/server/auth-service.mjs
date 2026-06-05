@@ -70,7 +70,7 @@ export async function verifyDiscordGuildMembership(config, userId) {
   };
 }
 
-export async function resolveAuthenticatedAccount({ prisma, config, discordUser, guildPayload }) {
+export async function resolveAuthenticatedAccount({ prisma, discordUser, guildPayload }) {
   const authIdentity = await prisma.authIdentity.findUnique({
     where: {
       provider_providerAccountId: {
@@ -230,9 +230,7 @@ export function flattenPermissions(account) {
 export async function createSession({ prisma, config, account, authIdentity }) {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + config.sessionTtlDays * 24 * 60 * 60 * 1000);
-  const recentAuthExpiresAt = new Date(
-    now.getTime() + config.recentAuthWindowMinutes * 60 * 1000,
-  );
+  const recentAuthExpiresAt = new Date(now.getTime() + config.recentAuthWindowMinutes * 60 * 1000);
   const sessionId = createRandomId();
 
   const session = await prisma.session.create({

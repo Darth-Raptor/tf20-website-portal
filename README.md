@@ -57,8 +57,23 @@ The remaining major workflow families are still ahead on the roadmap:
 Primary local validation commands:
 
 ```bash
+npm run format:check
+npm run lint
+npm run test
+npm run test:integration
 npm run check
 npm run smoke
+```
+
+`npm run test:integration` requires `TEST_DATABASE_URL` and refuses to run
+against the normal development `DATABASE_URL`.
+
+For local MySQL, create a separate test database and grant the app user access
+before running integration tests. Example shape:
+
+```sql
+CREATE DATABASE tf20_test;
+GRANT ALL PRIVILEGES ON tf20_test.* TO 'tf20_user'@'127.0.0.1';
 ```
 
 Local runtime control:

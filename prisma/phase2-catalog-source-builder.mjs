@@ -1,12 +1,18 @@
 export function buildCatalogSource(source) {
   const rolesByKey = new Map(source.roles.map((role) => [role.key, role]));
-  const permissionKeysByRole = derivePermissionKeysByRole(source.roles, source.permissions, rolesByKey);
+  const permissionKeysByRole = derivePermissionKeysByRole(
+    source.roles,
+    source.permissions,
+    rolesByKey,
+  );
 
   return {
     version: "2026-06-04-phase2-subpass3",
     metadata: {
-      description: "Authoritative TF20 catalog source generated from the approved Phase 2 review CSVs.",
-      policy: "Catalog changes are repo-driven, additive by default, and non-destructive for referenced records.",
+      description:
+        "Authoritative TF20 catalog source generated from the approved Phase 2 review CSVs.",
+      policy:
+        "Catalog changes are repo-driven, additive by default, and non-destructive for referenced records.",
       generatedFrom: "phase two review files",
       enumDisplayLabels: buildEnumDisplayLabels(source.enumDisplayMappings),
     },
@@ -102,13 +108,14 @@ function derivePermissionKeysByRole(roles, permissions, rolesByKey) {
   for (const permission of permissions) {
     const minimumRole = rolesByKey.get(permission.minimumRoleKey);
     if (!minimumRole) {
-      throw new Error(`Missing minimum role ${permission.minimumRoleKey} for permission ${permission.key}.`);
+      throw new Error(
+        `Missing minimum role ${permission.minimumRoleKey} for permission ${permission.key}.`,
+      );
     }
 
     for (const role of roles) {
       const getsPermission =
-        role.key === minimumRole.key ||
-        role.precedence > minimumRole.precedence;
+        role.key === minimumRole.key || role.precedence > minimumRole.precedence;
 
       if (!getsPermission) continue;
       permissionKeysByRole.get(role.key).push(permission.key);

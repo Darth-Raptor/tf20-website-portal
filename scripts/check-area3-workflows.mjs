@@ -29,11 +29,7 @@ const requiredEnumValues = {
   NotificationDeliveryChannel: ["InApp"],
 };
 
-const retiredApplicationStatuses = [
-  "Contacted",
-  "InterviewScheduled",
-  "InterviewCompleted",
-];
+const retiredApplicationStatuses = ["Contacted", "InterviewScheduled", "InterviewCompleted"];
 
 const requiredFields = {
   Application: [
@@ -74,7 +70,11 @@ const requiredFields = {
 for (const [enumName, values] of Object.entries(requiredEnumValues)) {
   const body = enumBody(enumName);
   for (const value of values) {
-    assertPattern(new RegExp(`^\\s*${value}\\s*$`, "m"), `Missing Area 3 enum value ${enumName}.${value}`, body);
+    assertPattern(
+      new RegExp(`^\\s*${value}\\s*$`, "m"),
+      `Missing Area 3 enum value ${enumName}.${value}`,
+      body,
+    );
   }
 }
 
@@ -88,12 +88,20 @@ for (const status of retiredApplicationStatuses) {
 for (const [modelName, fields] of Object.entries(requiredFields)) {
   const body = modelBody(modelName);
   for (const field of fields) {
-    assertPattern(new RegExp(`^\\s*${field}\\s+`, "m"), `Missing Area 3 field ${modelName}.${field}`, body);
+    assertPattern(
+      new RegExp(`^\\s*${field}\\s+`, "m"),
+      `Missing Area 3 field ${modelName}.${field}`,
+      body,
+    );
   }
 }
 
 const trainingRecordBody = modelBody("TrainingRecord");
-assertPattern(/^\s*status\s+RequestStatus\s+@default\(Completed\)/m, "TrainingRecord must default to completed official records.", trainingRecordBody);
+assertPattern(
+  /^\s*status\s+RequestStatus\s+@default\(Completed\)/m,
+  "TrainingRecord must default to completed official records.",
+  trainingRecordBody,
+);
 
 if (!/catalog-source\.mjs/.test(seed)) {
   fail("Seed file must read workflow-related catalogs from the authoritative catalog source.");

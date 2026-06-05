@@ -286,13 +286,22 @@ function validatePermissions(source, errors, suspicious) {
 
   for (const permission of source.permissions) {
     validateCatalogKey(permission.key, "permissions", errors, suspicious);
-    validateRequiredText(permission.displayName, `permissions.${permission.key}.displayName`, errors, suspicious);
+    validateRequiredText(
+      permission.displayName,
+      `permissions.${permission.key}.displayName`,
+      errors,
+      suspicious,
+    );
     if (!roleKeys.has(permission.minimumRoleKey)) {
       errors.push(
         `permissions.${permission.key}.minimumRoleKey references missing role ${permission.minimumRoleKey}.`,
       );
     }
-    checkPlaceholder(permission.displayName, `permissions.${permission.key}.displayName`, suspicious);
+    checkPlaceholder(
+      permission.displayName,
+      `permissions.${permission.key}.displayName`,
+      suspicious,
+    );
   }
 }
 
@@ -336,7 +345,12 @@ function validateBillets(source, errors, suspicious) {
 
   for (const billet of source.billets) {
     validateCatalogKey(billet.key, "billets", errors, suspicious);
-    validateRequiredText(billet.displayName, `billets.${billet.key}.displayName`, errors, suspicious);
+    validateRequiredText(
+      billet.displayName,
+      `billets.${billet.key}.displayName`,
+      errors,
+      suspicious,
+    );
     validateRequiredText(billet.category, `billets.${billet.key}.category`, errors, suspicious);
     if (!unitKeys.has(billet.unitKey)) {
       errors.push(`billets.${billet.key}.unitKey references missing unit ${billet.unitKey}.`);
@@ -371,9 +385,24 @@ function validateStaffSelections(source, errors, suspicious) {
 
   for (const selection of source.staffSelections) {
     validateCatalogKey(selection.key, "staffSelections", errors, suspicious);
-    validateRequiredText(selection.identifier, `staffSelections.${selection.key}.identifier`, errors, suspicious);
-    validateRequiredText(selection.name, `staffSelections.${selection.key}.name`, errors, suspicious);
-    validateRequiredText(selection.function, `staffSelections.${selection.key}.function`, errors, suspicious);
+    validateRequiredText(
+      selection.identifier,
+      `staffSelections.${selection.key}.identifier`,
+      errors,
+      suspicious,
+    );
+    validateRequiredText(
+      selection.name,
+      `staffSelections.${selection.key}.name`,
+      errors,
+      suspicious,
+    );
+    validateRequiredText(
+      selection.function,
+      `staffSelections.${selection.key}.function`,
+      errors,
+      suspicious,
+    );
     checkPlaceholder(selection.name, `staffSelections.${selection.key}.name`, suspicious);
   }
 }
@@ -394,14 +423,21 @@ function validateEnums(source, errors, suspicious) {
 
   for (const mapping of source.enumDisplayMappings) {
     validateRequiredText(mapping.enumName, "enum name", errors, suspicious);
-    validateRequiredText(mapping.displayValue, `${mapping.enumName}.displayValue`, errors, suspicious);
+    validateRequiredText(
+      mapping.displayValue,
+      `${mapping.enumName}.displayValue`,
+      errors,
+      suspicious,
+    );
     if (!SAFE_IDENTIFIER_PATTERN.test(mapping.normalizedValue)) {
       errors.push(
         `Enum ${mapping.enumName} produced invalid normalized identifier ${mapping.normalizedValue}.`,
       );
     }
     if (PLACEHOLDER_PATTERN.test(mapping.displayValue)) {
-      suspicious.push(`Enum ${mapping.enumName} contains placeholder-looking display value ${mapping.displayValue}.`);
+      suspicious.push(
+        `Enum ${mapping.enumName} contains placeholder-looking display value ${mapping.displayValue}.`,
+      );
     }
   }
 
@@ -418,7 +454,10 @@ function parseCsvFile(filePath, expectedHeaders) {
   }
 
   const header = rows[0];
-  if (header.length !== expectedHeaders.length || header.some((value, index) => value !== expectedHeaders[index])) {
+  if (
+    header.length !== expectedHeaders.length ||
+    header.some((value, index) => value !== expectedHeaders[index])
+  ) {
     throw new Error(
       `CSV header mismatch for ${path.basename(filePath)}. Expected ${expectedHeaders.join(", ")} but got ${header.join(", ")}.`,
     );
@@ -447,9 +486,9 @@ function parseCsv(text) {
     const char = text[index];
     const next = text[index + 1];
 
-    if (char === "\"") {
-      if (inQuotes && next === "\"") {
-        cell += "\"";
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        cell += '"';
         index += 1;
       } else {
         inQuotes = !inQuotes;

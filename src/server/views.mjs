@@ -128,9 +128,16 @@ export function renderPersonnelSelfScreen({ summary, profile }) {
         <div class="panel">
           <h2>Recent status</h2>
           <ul class="meta-list">
-            ${profile.statusHistory.length
-              ? profile.statusHistory.map((entry) => `<li><strong>${escapeHtml(displayPersonnelStatus(entry.newStatus))}</strong> - ${formatDate(entry.effectiveAt)}<br /><span class="muted">${escapeHtml(entry.reason)}</span></li>`).join("")
-              : "<li>No status history recorded yet.</li>"}
+            ${
+              profile.statusHistory.length
+                ? profile.statusHistory
+                    .map(
+                      (entry) =>
+                        `<li><strong>${escapeHtml(displayPersonnelStatus(entry.newStatus))}</strong> - ${formatDate(entry.effectiveAt)}<br /><span class="muted">${escapeHtml(entry.reason)}</span></li>`,
+                    )
+                    .join("")
+                : "<li>No status history recorded yet.</li>"
+            }
           </ul>
         </div>
       </div>`
@@ -156,13 +163,7 @@ export function renderPersonnelSelfScreen({ summary, profile }) {
   );
 }
 
-export function renderPersonnelRosterScreen({
-  summary,
-  items,
-  units,
-  filters,
-  errorMessage,
-}) {
+export function renderPersonnelRosterScreen({ items, units, filters, errorMessage }) {
   return pageTemplate(
     "Personnel Roster",
     `<div class="stack">
@@ -182,7 +183,12 @@ export function renderPersonnelRosterScreen({
               <label for="status">Status filter</label>
               <select id="status" name="status">
                 <option value="">All statuses</option>
-                ${personnelStatusOptions().map((status) => `<option value="${status}" ${filters.status === status ? "selected" : ""}>${escapeHtml(displayPersonnelStatus(status))}</option>`).join("")}
+                ${personnelStatusOptions()
+                  .map(
+                    (status) =>
+                      `<option value="${status}" ${filters.status === status ? "selected" : ""}>${escapeHtml(displayPersonnelStatus(status))}</option>`,
+                  )
+                  .join("")}
               </select>
             </div>
             <div class="field">
@@ -199,8 +205,9 @@ export function renderPersonnelRosterScreen({
         </form>
       </div>
       <div class="card">
-        ${items.length
-          ? `<div class="table-wrap">
+        ${
+          items.length
+            ? `<div class="table-wrap">
               <table>
                 <thead>
                   <tr>
@@ -216,7 +223,9 @@ export function renderPersonnelRosterScreen({
                   </tr>
                 </thead>
                 <tbody>
-                  ${items.map((item) => `<tr>
+                  ${items
+                    .map(
+                      (item) => `<tr>
                     <td>${escapeHtml(item.name)}</td>
                     <td>${escapeHtml(item.account.displayName ?? item.account.authIdentities[0]?.displayName ?? item.account.authIdentities[0]?.username ?? item.account.id)}</td>
                     <td>${escapeHtml(displayPersonnelStatus(item.status))}</td>
@@ -226,18 +235,20 @@ export function renderPersonnelRosterScreen({
                     <td>${escapeHtml(item.currentMOS?.identifier ?? item.currentMOS?.key ?? "—")}</td>
                     <td>${item.goodStanding ? "Good" : "Restricted"}</td>
                     <td><a class="button secondary" href="/personnel/${item.id}">Open</a></td>
-                  </tr>`).join("")}
+                  </tr>`,
+                    )
+                    .join("")}
                 </tbody>
               </table>
             </div>`
-          : `<div class="empty">No personnel profiles match the current filters and scope.</div>`}
+            : `<div class="empty">No personnel profiles match the current filters and scope.</div>`
+        }
       </div>
     </div>`,
   );
 }
 
 export function renderPersonnelDetailScreen({
-  summary,
   profile,
   lookups,
   canUpdate,
@@ -350,7 +361,7 @@ export function renderOwnApplicationScreen({
   );
 }
 
-export function renderApplicationReviewQueueScreen({ summary, applications, errorMessage }) {
+export function renderApplicationReviewQueueScreen({ applications, errorMessage }) {
   return pageTemplate(
     "Application Review",
     `<div class="stack">
@@ -364,8 +375,11 @@ export function renderApplicationReviewQueueScreen({ summary, applications, erro
       </div>
       ${errorMessage ? `<div class="card"><strong>${escapeHtml(errorMessage)}</strong></div>` : ""}
       <div class="grid">
-        ${applications.length
-          ? applications.map((application) => `<div class="card">
+        ${
+          applications.length
+            ? applications
+                .map(
+                  (application) => `<div class="card">
               <h2>${escapeHtml(application.account.displayName ?? application.account.authIdentities[0]?.displayName ?? application.account.authIdentities[0]?.username ?? application.account.id)}</h2>
               <p class="muted">${escapeHtml(application.targetUnit?.name ?? "Unknown unit")}</p>
               <ul class="meta-list">
@@ -374,33 +388,44 @@ export function renderApplicationReviewQueueScreen({ summary, applications, erro
                 <li>Target unit: <code>${escapeHtml(application.targetUnit?.name ?? "Unknown")}</code></li>
               </ul>
               <p><a class="button" href="/applications/${application.id}">Open review</a></p>
-            </div>`).join("")
-          : `<div class="card"><p class="muted">There are no applications in your review queue right now.</p></div>`}
+            </div>`,
+                )
+                .join("")
+            : `<div class="card"><p class="muted">There are no applications in your review queue right now.</p></div>`
+        }
       </div>
     </div>`,
   );
 }
 
 export function renderApplicationReviewDetailScreen({
-  summary,
   application,
   units,
   canRecruiterReview,
   canTargetUnitReview,
   errorMessage,
 }) {
-  const answersMarkup = application.answers.map((answer) =>
-    `<li><strong>${escapeHtml(answer.questionText)}:</strong> ${escapeHtml(answer.answer || "—")}</li>`
-  ).join("");
+  const answersMarkup = application.answers
+    .map(
+      (answer) =>
+        `<li><strong>${escapeHtml(answer.questionText)}:</strong> ${escapeHtml(answer.answer || "—")}</li>`,
+    )
+    .join("");
 
-  const historyMarkup = application.statusHistory.map((entry) =>
-    `<li><strong>${escapeHtml(displayApplicationStatus(entry.newStatus))}</strong> - ${formatDate(entry.createdAt)}<br /><span class="muted">${escapeHtml(entry.reason || "No reason recorded.")}</span></li>`
-  ).join("");
+  const historyMarkup = application.statusHistory
+    .map(
+      (entry) =>
+        `<li><strong>${escapeHtml(displayApplicationStatus(entry.newStatus))}</strong> - ${formatDate(entry.createdAt)}<br /><span class="muted">${escapeHtml(entry.reason || "No reason recorded.")}</span></li>`,
+    )
+    .join("");
 
   const notesMarkup = application.notes.length
-    ? application.notes.map((note) =>
-        `<li><strong>${escapeHtml(note.stage ?? "General")}</strong> - ${formatDate(note.createdAt)}<br />${escapeHtml(note.body)}</li>`
-      ).join("")
+    ? application.notes
+        .map(
+          (note) =>
+            `<li><strong>${escapeHtml(note.stage ?? "General")}</strong> - ${formatDate(note.createdAt)}<br />${escapeHtml(note.body)}</li>`,
+        )
+        .join("")
     : `<li>No review notes yet.</li>`;
 
   return pageTemplate(
@@ -441,23 +466,31 @@ export function renderApplicationReviewDetailScreen({
         </div>
       </div>
       <div class="split">
-        ${canRecruiterReview ? renderReviewerActionCard({
-          title: "Recruiter recommendation",
-          action: `/applications/${application.id}/recommend`,
-          buttonLabel: "Recommend applicant",
-          reasonLabel: "Recruiter recommendation reason",
-          noteLabel: "Recruiter note",
-        }) : ""}
+        ${
+          canRecruiterReview
+            ? renderReviewerActionCard({
+                title: "Recruiter recommendation",
+                action: `/applications/${application.id}/recommend`,
+                buttonLabel: "Recommend applicant",
+                reasonLabel: "Recruiter recommendation reason",
+                noteLabel: "Recruiter note",
+              })
+            : ""
+        }
         ${canTargetUnitReview ? renderAssignUnitCard(application.id, units, application.targetUnitId) : ""}
       </div>
       <div class="split">
-        ${canTargetUnitReview ? renderReviewerActionCard({
-          title: "Accept and convert",
-          action: `/applications/${application.id}/accept`,
-          buttonLabel: "Accept application",
-          reasonLabel: "Acceptance reason",
-          noteLabel: "Final decision note",
-        }) : ""}
+        ${
+          canTargetUnitReview
+            ? renderReviewerActionCard({
+                title: "Accept and convert",
+                action: `/applications/${application.id}/accept`,
+                buttonLabel: "Accept application",
+                reasonLabel: "Acceptance reason",
+                noteLabel: "Final decision note",
+              })
+            : ""
+        }
         ${canRecruiterReview || canTargetUnitReview ? renderRejectCard(application.id) : ""}
       </div>
     </div>`,
@@ -683,7 +716,9 @@ function displayApplicationStatus(status) {
 
 function enumDisplayLabel(enumName, value) {
   if (!value) return "Unknown";
-  return catalogSource.metadata?.enumDisplayLabels?.[enumName]?.[value] ?? humanizeIdentifier(value);
+  return (
+    catalogSource.metadata?.enumDisplayLabels?.[enumName]?.[value] ?? humanizeIdentifier(value)
+  );
 }
 
 function humanizeIdentifier(value) {

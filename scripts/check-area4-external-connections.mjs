@@ -65,11 +65,7 @@ requireField("AuditLog", "recordType", "String?");
 requireField("AuditLog", "recordId", "String?");
 requireField("AuditLog", "reason", "String?");
 
-const forbiddenLegacyPatterns = [
-  /model\s+Airtable/i,
-  /enum\s+Legacy/i,
-  /AIRTABLE_/,
-];
+const forbiddenLegacyPatterns = [/model\s+Airtable/i, /enum\s+Legacy/i, /AIRTABLE_/];
 
 for (const pattern of forbiddenLegacyPatterns) {
   if (pattern.test(schema) || pattern.test(doc)) {
@@ -77,7 +73,9 @@ for (const pattern of forbiddenLegacyPatterns) {
   }
 }
 
-if (!roadmap.includes("4. External connections: implemented in `docs/external-connections.md` and")) {
+if (
+  !roadmap.includes("4. External connections: implemented in `docs/external-connections.md` and")
+) {
   fail("Roadmap does not mark Area 4 as implemented.");
 }
 

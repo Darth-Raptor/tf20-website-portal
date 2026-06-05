@@ -1,9 +1,10 @@
 function hasPermission(account, permissionKey) {
-  return (account.roleAssignments ?? []).some((assignment) =>
-    isActiveRoleAssignment(assignment) &&
-    (assignment.role?.permissions ?? []).some((grant) =>
-      grant.permission?.status === "Active" && grant.permission?.key === permissionKey,
-    ),
+  return (account.roleAssignments ?? []).some(
+    (assignment) =>
+      isActiveRoleAssignment(assignment) &&
+      (assignment.role?.permissions ?? []).some(
+        (grant) => grant.permission?.status === "Active" && grant.permission?.key === permissionKey,
+      ),
   );
 }
 
@@ -84,19 +85,20 @@ export async function listReviewQueue(prisma, account) {
   if (!recruiter && !targetUnitReviewer) return [];
 
   const scopedUnitIds = recruiter ? [] : activeUnitScopeIds(account);
-  const where = recruiter && targetUnitReviewer
-    ? {
-        OR: [
-          { status: "Submitted" },
-          { status: { in: ["RecruiterRecommended", "TargetUnitReview"] } },
-        ],
-      }
-    : recruiter
-      ? { status: "Submitted" }
-      : {
-          status: { in: ["RecruiterRecommended", "TargetUnitReview"] },
-          targetUnitId: { in: scopedUnitIds },
-        };
+  const where =
+    recruiter && targetUnitReviewer
+      ? {
+          OR: [
+            { status: "Submitted" },
+            { status: { in: ["RecruiterRecommended", "TargetUnitReview"] } },
+          ],
+        }
+      : recruiter
+        ? { status: "Submitted" }
+        : {
+            status: { in: ["RecruiterRecommended", "TargetUnitReview"] },
+            targetUnitId: { in: scopedUnitIds },
+          };
 
   return prisma.application.findMany({
     where,
@@ -122,7 +124,9 @@ export async function createOrResumeOwnApplication({ prisma, account, body }) {
   const activeExisting = await prisma.application.findFirst({
     where: {
       accountId: account.id,
-      status: { in: ["Submitted", "RecruiterScreening", "RecruiterRecommended", "TargetUnitReview"] },
+      status: {
+        in: ["Submitted", "RecruiterScreening", "RecruiterRecommended", "TargetUnitReview"],
+      },
     },
     include: applicationInclude(),
     orderBy: { createdAt: "desc" },
@@ -297,7 +301,13 @@ export async function recommendApplication({ prisma, actor, applicationId, reaso
   return { ok: true, application: result };
 }
 
-export async function assignApplicationUnit({ prisma, actor, applicationId, targetUnitId, reason }) {
+export async function assignApplicationUnit({
+  prisma,
+  actor,
+  applicationId,
+  targetUnitId,
+  reason,
+}) {
   if (!canRecruiterReview(actor) && !canTargetUnitReview(actor)) {
     return failure("permission_denied", "Application reassignment requires reviewer permission.");
   }
@@ -310,7 +320,11 @@ export async function assignApplicationUnit({ prisma, actor, applicationId, targ
     return failure("not_found", "Application was not found.");
   }
 
-  if (!["Submitted", "RecruiterScreening", "RecruiterRecommended", "TargetUnitReview"].includes(application.status)) {
+  if (
+    !["Submitted", "RecruiterScreening", "RecruiterRecommended", "TargetUnitReview"].includes(
+      application.status,
+    )
+  ) {
     return failure("invalid_transition", "Application can no longer be reassigned.");
   }
 
@@ -322,7 +336,11 @@ export async function assignApplicationUnit({ prisma, actor, applicationId, targ
     return failure("validation_error", "Selected target unit is invalid.");
   }
 
-  if (canTargetUnitReview(actor) && !canRecruiterReview(actor) && !isUnitInActorScope(actor, targetUnitId)) {
+  if (
+    canTargetUnitReview(actor) &&
+    !canRecruiterReview(actor) &&
+    !isUnitInActorScope(actor, targetUnitId)
+  ) {
     return failure("permission_denied", "Target-unit scope does not include the requested unit.");
   }
 
@@ -402,7 +420,10 @@ export async function acceptApplication({ prisma, actor, applicationId, reason, 
   }
 
   if (!isUnitInActorScope(actor, application.targetUnitId) && !hasGlobalReviewOverride(actor)) {
-    return failure("permission_denied", "Reviewer does not have target-unit authority for this application.");
+    return failure(
+      "permission_denied",
+      "Reviewer does not have target-unit authority for this application.",
+    );
   }
 
   if (application.account.status !== "Pending") {
@@ -418,10 +439,13 @@ export async function acceptApplication({ prisma, actor, applicationId, reason, 
     return failure("configuration_error", "Member role is missing from the seeded catalog.");
   }
 
-  const preferredName = firstAnswer(application, "preferred-name") ||
+  const preferredName =
+    firstAnswer(application, "preferred-name") ||
     application.account.displayName ||
-    application.account.authIdentities.find((identity) => identity.provider === "Discord")?.displayName ||
-    application.account.authIdentities.find((identity) => identity.provider === "Discord")?.username ||
+    application.account.authIdentities.find((identity) => identity.provider === "Discord")
+      ?.displayName ||
+    application.account.authIdentities.find((identity) => identity.provider === "Discord")
+      ?.username ||
     `TF20-${application.account.id.slice(-6)}`;
 
   const now = new Date();
@@ -563,7 +587,10 @@ export async function acceptApplication({ prisma, actor, applicationId, reason, 
         action: "accept-convert",
         recordType: "Application",
         recordId: applicationId,
-        oldValue: { accountStatus: application.account.status, applicationStatus: application.status },
+        oldValue: {
+          accountStatus: application.account.status,
+          applicationStatus: application.status,
+        },
         newValue: {
           accountStatus: "Active",
           applicationStatus: "Converted",
@@ -602,7 +629,9 @@ export async function rejectApplication({ prisma, actor, applicationId, reason, 
   }
 
   const isRecruiterStage = ["Submitted", "RecruiterScreening"].includes(application.status);
-  const isTargetUnitStage = ["RecruiterRecommended", "TargetUnitReview"].includes(application.status);
+  const isTargetUnitStage = ["RecruiterRecommended", "TargetUnitReview"].includes(
+    application.status,
+  );
 
   if (isRecruiterStage && !canRecruiterReview(actor)) {
     return failure("permission_denied", "Recruiter review permission is required.");
@@ -613,7 +642,10 @@ export async function rejectApplication({ prisma, actor, applicationId, reason, 
       return failure("permission_denied", "Target-unit review permission is required.");
     }
     if (!isUnitInActorScope(actor, application.targetUnitId) && !hasGlobalReviewOverride(actor)) {
-      return failure("permission_denied", "Reviewer does not have target-unit authority for this application.");
+      return failure(
+        "permission_denied",
+        "Reviewer does not have target-unit authority for this application.",
+      );
     }
   }
 

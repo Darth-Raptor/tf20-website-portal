@@ -68,10 +68,10 @@ Current state:
 
 - product name currently appears as `Task Force 20 Personnel Management System`
 - public/protected split currently appears as `public recruiting/front-door
-  site` and `protected PMS`
+site` and `protected PMS`
 - backend style is currently `hybrid REST`
 - operational source of truth is currently described as `database-only
-  operational source of truth`
+operational source of truth`
 
 Decision form:
 
@@ -461,7 +461,7 @@ Current state:
 
 - catalog version is currently `2026-06-02-step1`
 - catalog policy is currently `Catalog changes are repo-driven, additive by
-  default, and non-destructive for referenced records.`
+default, and non-destructive for referenced records.`
 - catalog lifecycle currently uses `Draft`, `Active`, `Inactive`, and
   `Archived`
 
@@ -832,19 +832,19 @@ the workbook is done.
 
 ### 5.1 Approved Changes
 
-- 
+-
 
 ### 5.2 Rejected Changes
 
-- 
+-
 
 ### 5.3 Deferred Items
 
-- 
+-
 
 ### 5.4 Migration-Risk Items
 
-- 
+-
 
 ### 5.5 Finalized Decisions Summary
 

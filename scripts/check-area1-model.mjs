@@ -66,12 +66,16 @@ const retiredModelNames = [
   "DiscordSyncLog",
 ];
 
-const missingModels = requiredModels.filter((modelName) => !new RegExp(`^model\\s+${modelName}\\s+\\{`, "m").test(schema));
+const missingModels = requiredModels.filter(
+  (modelName) => !new RegExp(`^model\\s+${modelName}\\s+\\{`, "m").test(schema),
+);
 if (missingModels.length) {
   fail(`Missing Area 1 models: ${missingModels.join(", ")}`);
 }
 
-const retiredModels = retiredModelNames.filter((modelName) => new RegExp(`^model\\s+${modelName}\\s+\\{`, "m").test(schema));
+const retiredModels = retiredModelNames.filter((modelName) =>
+  new RegExp(`^model\\s+${modelName}\\s+\\{`, "m").test(schema),
+);
 if (retiredModels.length) {
   fail(`Retired previous-build model names are still present: ${retiredModels.join(", ")}`);
 }

@@ -108,7 +108,9 @@ if (!doc.includes("No public recruiting-site screen contract.")) {
 
 for (const pattern of forbiddenLegacyPatterns) {
   if (pattern.test(schema)) {
-    fail(`Area 5 schema unexpectedly contains forbidden legacy/public contract surface: ${pattern}`);
+    fail(
+      `Area 5 schema unexpectedly contains forbidden legacy/public contract surface: ${pattern}`,
+    );
   }
 }
 
@@ -155,7 +157,9 @@ function requireField(modelName, fieldName, fieldType) {
 }
 
 function getBlockBody(schemaText, blockType, blockName) {
-  const match = new RegExp(`^${blockType}\\s+${blockName}\\s+\\{([\\s\\S]*?)^}`, "m").exec(schemaText);
+  const match = new RegExp(`^${blockType}\\s+${blockName}\\s+\\{([\\s\\S]*?)^}`, "m").exec(
+    schemaText,
+  );
   if (!match) fail(`Missing ${blockType} ${blockName}`);
   return match[1];
 }

@@ -1,18 +1,23 @@
 import { PrismaClient } from "@prisma/client";
 import { catalogSource } from "./catalog-source.mjs";
-
-const prisma = new PrismaClient();
-const mode = parseMode(process.argv.slice(2));
+import { pathToFileURL } from "node:url";
 
 async function main() {
+  const prisma = new PrismaClient();
+  const mode = parseMode(process.argv.slice(2));
   validateCatalogSource(catalogSource);
-  const summary = await syncCatalogs(prisma, catalogSource);
-  console.log(
-    `${mode === "bootstrap" ? "Catalog bootstrap" : "Catalog sync"} complete: ${JSON.stringify(summary)}`,
-  );
+  try {
+    const summary = await syncCatalogs(prisma, catalogSource, { mode });
+    console.log(
+      `${mode === "bootstrap" ? "Catalog bootstrap" : "Catalog sync"} complete: ${JSON.stringify(summary)}`,
+    );
+  } finally {
+    await prisma.$disconnect();
+  }
 }
 
-async function syncCatalogs(prismaClient, source) {
+export async function syncCatalogs(prismaClient, source, options = {}) {
+  const mode = options.mode ?? "sync";
   const summary = {
     mode,
     roles: source.roles.length,
@@ -202,7 +207,9 @@ async function syncStaffSections(tx, staffSections) {
 
 async function syncMOS(tx, mosEntries) {
   for (const mos of mosEntries) {
-    const unit = mos.unitKey ? await tx.unit.findUniqueOrThrow({ where: { key: mos.unitKey } }) : null;
+    const unit = mos.unitKey
+      ? await tx.unit.findUniqueOrThrow({ where: { key: mos.unitKey } })
+      : null;
     await tx.mOS.upsert({
       where: { key: mos.key },
       update: {
@@ -224,7 +231,9 @@ async function syncMOS(tx, mosEntries) {
 
 async function syncBillets(tx, billets) {
   for (const billet of billets) {
-    const unit = billet.unitKey ? await tx.unit.findUniqueOrThrow({ where: { key: billet.unitKey } }) : null;
+    const unit = billet.unitKey
+      ? await tx.unit.findUniqueOrThrow({ where: { key: billet.unitKey } })
+      : null;
     const minimumRank = billet.minimumRankKey
       ? await tx.rank.findUniqueOrThrow({ where: { key: billet.minimumRankKey } })
       : null;
@@ -317,17 +326,41 @@ async function syncAwards(tx, awards) {
 }
 
 async function archiveNonSourceCatalogs(tx, source) {
-  await archiveRowsNotInSource(tx.role, "key", source.roles.map((role) => role.key));
-  await archiveRowsNotInSource(tx.permission, "key", source.permissions.map((permission) => permission.key));
-  await archiveRowsNotInSource(tx.unit, "key", source.units.map((unit) => unit.key));
-  await archiveRowsNotInSource(tx.rank, "key", source.ranks.map((rank) => rank.key));
-  await archiveRowsNotInSource(tx.billet, "key", source.billets.map((billet) => billet.key));
+  await archiveRowsNotInSource(
+    tx.role,
+    "key",
+    source.roles.map((role) => role.key),
+  );
+  await archiveRowsNotInSource(
+    tx.permission,
+    "key",
+    source.permissions.map((permission) => permission.key),
+  );
+  await archiveRowsNotInSource(
+    tx.unit,
+    "key",
+    source.units.map((unit) => unit.key),
+  );
+  await archiveRowsNotInSource(
+    tx.rank,
+    "key",
+    source.ranks.map((rank) => rank.key),
+  );
+  await archiveRowsNotInSource(
+    tx.billet,
+    "key",
+    source.billets.map((billet) => billet.key),
+  );
   await archiveRowsNotInSource(
     tx.staffSection,
     "key",
     source.staffSections.map((staffSection) => staffSection.key),
   );
-  await archiveRowsNotInSource(tx.mOS, "key", source.mos.map((mos) => mos.key));
+  await archiveRowsNotInSource(
+    tx.mOS,
+    "key",
+    source.mos.map((mos) => mos.key),
+  );
   await archiveRowsNotInSource(
     tx.trainingCourse,
     "key",
@@ -373,7 +406,7 @@ async function archiveRowsNotInSource(model, fieldName, sourceValues, options = 
   });
 }
 
-function validateCatalogSource(source) {
+export function validateCatalogSource(source) {
   const requiredFamilies = [
     "roles",
     "permissions",
@@ -410,21 +443,27 @@ function validateCatalogSource(source) {
 
   for (const unit of source.units) {
     if (unit.parentKey && !unitKeys.has(unit.parentKey)) {
-      throw new Error(`Catalog source unit ${unit.key} references missing parentKey ${unit.parentKey}.`);
+      throw new Error(
+        `Catalog source unit ${unit.key} references missing parentKey ${unit.parentKey}.`,
+      );
     }
   }
 
   for (const role of source.roles) {
     for (const permissionKey of role.permissionKeys ?? []) {
       if (!permissionKeys.has(permissionKey)) {
-        throw new Error(`Catalog source role ${role.key} references missing permission ${permissionKey}.`);
+        throw new Error(
+          `Catalog source role ${role.key} references missing permission ${permissionKey}.`,
+        );
       }
     }
   }
 
   for (const billet of source.billets) {
     if (billet.unitKey && !unitKeys.has(billet.unitKey)) {
-      throw new Error(`Catalog source billet ${billet.key} references missing unitKey ${billet.unitKey}.`);
+      throw new Error(
+        `Catalog source billet ${billet.key} references missing unitKey ${billet.unitKey}.`,
+      );
     }
     if (billet.minimumRankKey && !rankKeys.has(billet.minimumRankKey)) {
       throw new Error(
@@ -461,12 +500,9 @@ function assertUnique(items, familyName, fieldName) {
   }
 }
 
-main()
-  .then(async () => {
-    await prisma.$disconnect();
-  })
-  .catch(async (error) => {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
     console.error(error);
-    await prisma.$disconnect();
     process.exit(1);
   });
+}

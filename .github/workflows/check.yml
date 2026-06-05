@@ -9,6 +9,22 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: tf20_ci_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/tf20_ci_dev
+      TEST_DATABASE_URL: mysql://root:root@127.0.0.1:3306/tf20_ci_test
 
     steps:
       - name: Checkout
@@ -20,10 +36,30 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Generate Prisma client
         run: npm run prisma:generate
+
+      - name: Validate Prisma schema
+        run: npm run prisma:validate
+
+      - name: Verify generated catalog is current
+        run: |
+          npm run phase2:catalog:generate
+          git diff --exit-code prisma/catalog-source.mjs
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run unit tests
+        run: npm run test
+
+      - name: Run integration tests
+        run: npm run test:integration
 
       - name: Run branch checks
         run: npm run check

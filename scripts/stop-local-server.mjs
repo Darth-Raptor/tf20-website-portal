@@ -15,7 +15,9 @@ try {
   });
 
   if (response.status === 404) {
-    fail(`Local shutdown endpoint is not available on port ${port}. Restart the server with the current code and try again.`);
+    fail(
+      `Local shutdown endpoint is not available on port ${port}. Restart the server with the current code and try again.`,
+    );
   }
 
   if (!response.ok) {
@@ -67,7 +69,7 @@ function readPortFromDotEnv() {
 
 function stripQuotes(value) {
   if (
-    (value.startsWith("\"") && value.endsWith("\"")) ||
+    (value.startsWith('"') && value.endsWith('"')) ||
     (value.startsWith("'") && value.endsWith("'"))
   ) {
     return value.slice(1, -1);

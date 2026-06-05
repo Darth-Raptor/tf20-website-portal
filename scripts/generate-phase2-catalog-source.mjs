@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import prettier from "prettier";
 
 import {
   loadPhase2ReviewCsvs,
@@ -17,7 +18,16 @@ const reviewSource = loadPhase2ReviewCsvs({ projectRoot });
 validatePhase2ReviewCsvs(reviewSource);
 
 const catalogSource = buildCatalogSource(reviewSource);
-const fileContents = formatCatalogSourceModule(catalogSource);
+const fileContents = await prettier.format(formatCatalogSourceModule(catalogSource), {
+  parser: "babel",
+  filepath: outputPath,
+  printWidth: 100,
+  semi: true,
+  singleQuote: false,
+  trailingComma: "all",
+});
 
 fs.writeFileSync(outputPath, fileContents, "utf8");
-console.log(`Generated ${path.relative(projectRoot, outputPath)} from approved Phase 2 review CSVs.`);
+console.log(
+  `Generated ${path.relative(projectRoot, outputPath)} from approved Phase 2 review CSVs.`,
+);

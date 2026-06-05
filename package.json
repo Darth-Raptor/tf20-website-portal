@@ -5,8 +5,17 @@
   "type": "module",
   "description": "Task Force 20 clean-slate PMS backend planning and data-model foundation.",
   "scripts": {
-    "check": "node --check prisma/catalog-source.mjs && node --check prisma/phase2-review-csv-loader.mjs && node --check prisma/phase2-catalog-source-builder.mjs && node --check prisma/seed.mjs && node --check src/server/config.mjs && node --check src/server/db.mjs && node --check src/server/errors.mjs && node --check src/server/cookies.mjs && node --check src/server/access.mjs && node --check src/server/application-service.mjs && node --check src/server/personnel-service.mjs && node --check src/server/auth-service.mjs && node --check src/server/middleware.mjs && node --check src/server/views.mjs && node --check src/server/app.mjs && node --check src/server/index.mjs && node --check scripts/check-area1-model.mjs && node --check scripts/check-area2-access.mjs && node --check scripts/check-area3-workflows.mjs && node --check scripts/check-area4-external-connections.mjs && node --check scripts/check-area5-api-frontend-contract.mjs && node --check scripts/check-area6-operations-security-testing.mjs && node --check scripts/check-catalog-source.mjs && node --check scripts/check-phase2-review-csvs.mjs && node --check scripts/generate-phase2-catalog-source.mjs && node scripts/check-area1-model.mjs && node scripts/check-area2-access.mjs && node scripts/check-area3-workflows.mjs && node scripts/check-area4-external-connections.mjs && node scripts/check-area5-api-frontend-contract.mjs && node scripts/check-area6-operations-security-testing.mjs && node scripts/check-catalog-source.mjs && node scripts/check-phase2-review-csvs.mjs",
+    "check": "npm run syntax && npm run validate:planning && npm run secret:check",
+    "syntax": "node --check prisma/catalog-source.mjs && node --check prisma/phase2-review-csv-loader.mjs && node --check prisma/phase2-catalog-source-builder.mjs && node --check prisma/seed.mjs && node --check src/server/config.mjs && node --check src/server/db.mjs && node --check src/server/errors.mjs && node --check src/server/cookies.mjs && node --check src/server/access.mjs && node --check src/server/application-service.mjs && node --check src/server/personnel-service.mjs && node --check src/server/auth-service.mjs && node --check src/server/middleware.mjs && node --check src/server/views.mjs && node --check src/server/app.mjs && node --check src/server/index.mjs && node --check scripts/check-area1-model.mjs && node --check scripts/check-area2-access.mjs && node --check scripts/check-area3-workflows.mjs && node --check scripts/check-area4-external-connections.mjs && node --check scripts/check-area5-api-frontend-contract.mjs && node --check scripts/check-area6-operations-security-testing.mjs && node --check scripts/check-catalog-source.mjs && node --check scripts/check-phase2-review-csvs.mjs && node --check scripts/check-secret-hygiene.mjs && node --check scripts/generate-phase2-catalog-source.mjs && node --check scripts/run-integration-tests.mjs",
+    "validate:planning": "node scripts/check-area1-model.mjs && node scripts/check-area2-access.mjs && node scripts/check-area3-workflows.mjs && node scripts/check-area4-external-connections.mjs && node scripts/check-area5-api-frontend-contract.mjs && node scripts/check-area6-operations-security-testing.mjs && node scripts/check-catalog-source.mjs && node scripts/check-phase2-review-csvs.mjs",
+    "secret:check": "node scripts/check-secret-hygiene.mjs",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node --test test/unit/*.test.mjs",
+    "test:integration": "node scripts/run-integration-tests.mjs",
     "prisma:generate": "prisma generate",
+    "prisma:validate": "prisma validate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:dev": "prisma migrate dev",
     "db:seed": "node prisma/seed.mjs --mode=bootstrap",
@@ -27,6 +36,10 @@
     "express": "^5.1.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.4.1",
+    "globals": "^17.6.0",
+    "prettier": "^3.8.3",
     "prisma": "^6.0.0"
   },
   "prisma": {

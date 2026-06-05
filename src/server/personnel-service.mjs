@@ -130,12 +130,7 @@ export async function getScopedUnitFilters(prisma, actor) {
   return { ok: true, units };
 }
 
-export async function updatePersonnelProfile({
-  prisma,
-  actor,
-  personnelProfileId,
-  body,
-}) {
+export async function updatePersonnelProfile({ prisma, actor, personnelProfileId, body }) {
   if (!canUpdateScopedPersonnel(actor)) {
     return failure("permission_denied", "Personnel update permission is required.");
   }
@@ -211,7 +206,10 @@ export async function updatePersonnelProfile({
     return failure("validation_error", "Selected billet does not belong to the selected unit.");
   }
 
-  if (nextBillet?.minimumRank && (!nextRank || nextRank.precedence < nextBillet.minimumRank.precedence)) {
+  if (
+    nextBillet?.minimumRank &&
+    (!nextRank || nextRank.precedence < nextBillet.minimumRank.precedence)
+  ) {
     return failure(
       "validation_error",
       `Selected billet requires rank ${nextBillet.minimumRank.name}.`,
@@ -600,11 +598,12 @@ function parseBooleanLike(value) {
 }
 
 function hasPermission(account, permissionKey) {
-  return (account.roleAssignments ?? []).some((assignment) =>
-    isActiveRoleAssignment(assignment) &&
-    (assignment.role?.permissions ?? []).some((grant) =>
-      grant.permission?.status === "Active" && grant.permission?.key === permissionKey,
-    ),
+  return (account.roleAssignments ?? []).some(
+    (assignment) =>
+      isActiveRoleAssignment(assignment) &&
+      (assignment.role?.permissions ?? []).some(
+        (grant) => grant.permission?.status === "Active" && grant.permission?.key === permissionKey,
+      ),
   );
 }
 

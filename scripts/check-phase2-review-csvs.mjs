@@ -22,7 +22,5 @@ console.log(
   `Phase 2 review CSV check passed: ${summary.roles} roles, ${summary.permissions} permissions, ${summary.units} units, ${summary.ranks} ranks, ${summary.billets} billets, ${summary.staffSelections} staff selections, ${summary.mos} MOS entries, ${summary.trainingCourses} training courses, ${summary.qualifications} qualifications, ${summary.awards} awards, ${summary.enums} enums (${summary.enumValues} values).`,
 );
 if (summary.enumDisplayMappings > 0) {
-  console.log(
-    `Enum normalization preview prepared for ${summary.enumDisplayMappings} values.`,
-  );
+  console.log(`Enum normalization preview prepared for ${summary.enumDisplayMappings} values.`);
 }
