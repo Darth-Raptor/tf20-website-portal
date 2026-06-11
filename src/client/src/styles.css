@@ -15,7 +15,7 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --palette-top-navigation-bar: #08090b;
+  --palette-top-navigation-bar: #111214;
   --palette-section-bar: #08090b;
   --palette-page-bar: #111214;
   --palette-page-background: #000000;
@@ -825,7 +825,7 @@ th {
 
 .name-question {
   display: grid;
-  gap: 7px;
+  gap: 10px;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -835,6 +835,7 @@ th {
 }
 
 .name-question legend {
+  margin-bottom: 10px;
   padding: 0;
   font-size: 12px;
   text-transform: uppercase;
