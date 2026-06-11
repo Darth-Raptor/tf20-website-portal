@@ -1,3 +1,24 @@
+const APPLICATION_FORM_VERSION = "enlistment-v2";
+const RECRUITING_SOURCES = ["Reddit", "Steam", "Discord"];
+const MILITARY_BRANCHES = ["Army", "Navy", "AirForce", "Marines", "CoastGuard"];
+const ACTIVE_APPLICATION_STATUSES = [
+  "Draft",
+  "Submitted",
+  "MoreInfoRequested",
+  "RecruiterScreening",
+  "RecruiterRecommended",
+  "TargetUnitReview",
+  "Accepted",
+];
+const EDITABLE_APPLICATION_STATUSES = ["Draft", "MoreInfoRequested"];
+const REVIEW_QUEUE_RECRUITER_STATUSES = [
+  "Submitted",
+  "RecruiterScreening",
+  "RecruiterRecommended",
+  "TargetUnitReview",
+];
+const REVIEW_QUEUE_TARGET_STATUSES = ["RecruiterRecommended", "TargetUnitReview"];
+
 function hasPermission(account, permissionKey) {
   return (account.roleAssignments ?? []).some(
     (assignment) =>
@@ -15,23 +36,9 @@ function isHtmlRequest(req) {
 }
 
 function normalizeText(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function parseTargetUnitId(value) {
-  const text = normalizeText(value);
-  return text || null;
-}
-
-function buildApplicantAnswerDefinitions() {
-  return [
-    { key: "preferred-name", label: "Preferred name", section: "Identity", order: 10 },
-    { key: "age", label: "Age", section: "Basics", order: 20 },
-    { key: "timezone", label: "Timezone", section: "Basics", order: 30 },
-    { key: "availability", label: "Availability", section: "Availability", order: 40 },
-    { key: "experience", label: "Relevant experience", section: "Experience", order: 50 },
-    { key: "motivation", label: "Why do you want to join TF20?", section: "Motivation", order: 60 },
-  ];
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number") return String(value);
+  return "";
 }
 
 export function canCreateOwnApplication(account) {
@@ -51,17 +58,47 @@ export function canTargetUnitReview(account) {
 }
 
 export function canReviewApplicationRecord(account, application) {
-  if (canRecruiterReview(account)) return true;
-  if (!canTargetUnitReview(account)) return false;
+  if (canRecruiterReview(account) && application.status !== "Draft") return true;
+  if (!canTargetUnitReview(account) || !application.targetUnitId) return false;
   return isUnitInActorScope(account, application.targetUnitId) || hasGlobalReviewOverride(account);
 }
 
 export async function getApplicationUnits(prisma) {
-  return prisma.unit.findMany({
-    where: { status: "Active" },
-    orderBy: [{ hierarchyBase: "asc" }, { name: "asc" }],
-    select: { id: true, key: true, name: true },
+  const options = await getRecruitingOptions(prisma);
+  return options.units;
+}
+
+export async function getRecruitingOptions(prisma, selectedUnitIds = []) {
+  const normalizedUnitIds = [...new Set(coerceArray(selectedUnitIds).filter(Boolean))];
+  const units = await prisma.unit.findMany({
+    where: { status: "Active", recruitingOpen: true, hierarchyBase: 7000 },
+    orderBy: { name: "asc" },
+    select: { id: true, key: true, name: true, type: true, hierarchyBase: true },
   });
+  const mosWhere = {
+    status: "Active",
+    recruitingOpen: true,
+    ...(normalizedUnitIds.length ? { unitId: { in: normalizedUnitIds } } : {}),
+  };
+  const mos = await prisma.mOS.findMany({
+    where: mosWhere,
+    orderBy: [{ identifier: "asc" }, { name: "asc" }],
+    select: {
+      id: true,
+      key: true,
+      identifier: true,
+      name: true,
+      unitId: true,
+      unit: { select: { id: true, key: true, name: true } },
+    },
+  });
+
+  return {
+    sources: RECRUITING_SOURCES,
+    branches: MILITARY_BRANCHES,
+    units,
+    mos,
+  };
 }
 
 export async function getOwnApplication(prisma, accountId) {
@@ -89,85 +126,46 @@ export async function listReviewQueue(prisma, account) {
     recruiter && targetUnitReviewer
       ? {
           OR: [
-            { status: "Submitted" },
-            { status: { in: ["RecruiterRecommended", "TargetUnitReview"] } },
+            { status: { in: REVIEW_QUEUE_RECRUITER_STATUSES } },
+            { status: { in: REVIEW_QUEUE_TARGET_STATUSES }, targetUnitId: { not: null } },
           ],
         }
       : recruiter
-        ? { status: "Submitted" }
+        ? { status: { in: REVIEW_QUEUE_RECRUITER_STATUSES } }
         : {
-            status: { in: ["RecruiterRecommended", "TargetUnitReview"] },
-            targetUnitId: { in: scopedUnitIds },
+            status: { in: REVIEW_QUEUE_TARGET_STATUSES },
+            targetUnitId: { in: scopedUnitIds.length ? scopedUnitIds : [""] },
           };
 
   return prisma.application.findMany({
     where,
-    orderBy: [{ submittedAt: "asc" }],
+    orderBy: [{ submittedAt: "asc" }, { createdAt: "asc" }],
     include: applicationInclude(),
   });
 }
 
-export async function createOrResumeOwnApplication({ prisma, account, body }) {
-  if (!canCreateOwnApplication(account)) {
-    return failure("permission_denied", "Your account cannot create an application.");
-  }
+export async function createOrResumeDraftApplication({ prisma, account }) {
+  const eligibility = await validateApplicantEligibility(prisma, account);
+  if (!eligibility.ok) return eligibility;
 
-  const currentAccount = await prisma.account.findUnique({
-    where: { id: account.id },
-    include: { personnelProfile: true },
-  });
-
-  if (currentAccount?.personnelProfile) {
-    return failure("already_converted", "This account already has a personnel profile.");
-  }
-
-  const activeExisting = await prisma.application.findFirst({
-    where: {
-      accountId: account.id,
-      status: {
-        in: ["Submitted", "RecruiterScreening", "RecruiterRecommended", "TargetUnitReview"],
-      },
-    },
-    include: applicationInclude(),
-    orderBy: { createdAt: "desc" },
-  });
-
+  const activeExisting = await findActiveOwnApplication(prisma, account.id);
   if (activeExisting) {
     return { ok: true, created: false, application: activeExisting };
   }
 
-  const targetUnitId = parseTargetUnitId(body.targetUnitId);
-  if (!targetUnitId) {
-    return failure("validation_error", "Target unit is required.");
-  }
-
-  const unit = await prisma.unit.findFirst({
-    where: { id: targetUnitId, status: "Active" },
-    select: { id: true },
-  });
-
-  if (!unit) {
-    return failure("validation_error", "Selected target unit is invalid.");
-  }
-
-  const answers = buildApplicantAnswers(body);
   const application = await prisma.$transaction(async (tx) => {
     const created = await tx.application.create({
       data: {
         accountId: account.id,
-        targetUnitId,
-        status: "Submitted",
-        formVersion: "applicant-v1",
-        answers: {
-          create: answers,
-        },
+        status: "Draft",
+        formVersion: APPLICATION_FORM_VERSION,
         statusHistory: {
           create: {
             oldStatus: null,
-            newStatus: "Submitted",
+            newStatus: "Draft",
             stage: "RecruiterScreening",
             changedByAccountId: account.id,
-            reason: "Pending user submitted enlistment application.",
+            reason: "Pending user started an enlistment application draft.",
             permissionContext: {
               actorAccountId: account.id,
               actorStatus: account.status,
@@ -183,26 +181,11 @@ export async function createOrResumeOwnApplication({ prisma, account, body }) {
         actorAccountId: account.id,
         targetAccountId: account.id,
         module: "applications",
-        action: "submit-self",
+        action: "draft-self",
         recordType: "Application",
         recordId: created.id,
-        newValue: {
-          status: created.status,
-          targetUnitId: created.targetUnitId,
-        },
-        reason: "Pending user submitted their own application.",
-      },
-    });
-
-    await tx.notification.create({
-      data: {
-        accountId: account.id,
-        category: "applications",
-        workflowEvent: "application-submitted",
-        title: "Application submitted",
-        body: "Your enlistment application was submitted and is awaiting recruiter screening.",
-        relatedRecordType: "Application",
-        relatedRecordId: created.id,
+        newValue: { status: "Draft" },
+        reason: "Pending user started their own enlistment application draft.",
       },
     });
 
@@ -210,6 +193,276 @@ export async function createOrResumeOwnApplication({ prisma, account, body }) {
   });
 
   return { ok: true, created: true, application };
+}
+
+export async function updateOwnApplication({ prisma, account, body }) {
+  const eligibility = await validateApplicantEligibility(prisma, account);
+  if (!eligibility.ok) return eligibility;
+
+  const draft = await createOrResumeDraftApplication({ prisma, account });
+  if (!draft.ok) return draft;
+
+  const application = draft.application;
+  if (!EDITABLE_APPLICATION_STATUSES.includes(application.status)) {
+    return failure("invalid_transition", "This application is not editable right now.");
+  }
+
+  const data = normalizeApplicationData(body);
+  const validation = await validateApplicationData(prisma, data, { requireComplete: false });
+  if (!validation.ok) return validation;
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await persistApplicationData(tx, application.id, data);
+    return tx.application.findUniqueOrThrow({
+      where: { id: application.id },
+      include: applicationInclude(),
+    });
+  });
+
+  return { ok: true, application: updated };
+}
+
+export async function submitOwnApplication({ prisma, account, body }) {
+  const eligibility = await validateApplicantEligibility(prisma, account);
+  if (!eligibility.ok) return eligibility;
+
+  const draft = await createOrResumeDraftApplication({ prisma, account });
+  if (!draft.ok) return draft;
+
+  const application = draft.application;
+  if (!EDITABLE_APPLICATION_STATUSES.includes(application.status)) {
+    return failure(
+      "invalid_transition",
+      "This application cannot be submitted from its current state.",
+    );
+  }
+
+  const data = normalizeApplicationData(body);
+  const validation = await validateApplicationData(prisma, data, { requireComplete: true });
+  if (!validation.ok) return validation;
+
+  const now = new Date();
+  const result = await prisma.$transaction(async (tx) => {
+    await persistApplicationData(tx, application.id, data);
+    const updated = await tx.application.update({
+      where: { id: application.id },
+      data: {
+        status: "Submitted",
+        submittedAt: now,
+      },
+      include: applicationInclude(),
+    });
+
+    await tx.applicationStatusHistory.create({
+      data: {
+        applicationId: application.id,
+        oldStatus: application.status,
+        newStatus: "Submitted",
+        stage: "RecruiterScreening",
+        changedByAccountId: account.id,
+        reason:
+          application.status === "MoreInfoRequested"
+            ? "Applicant resubmitted requested enlistment application information."
+            : "Pending user submitted enlistment application.",
+        permissionContext: {
+          actorAccountId: account.id,
+          actorStatus: account.status,
+        },
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        actorAccountId: account.id,
+        targetAccountId: account.id,
+        module: "applications",
+        action: application.status === "MoreInfoRequested" ? "resubmit-self" : "submit-self",
+        recordType: "Application",
+        recordId: application.id,
+        oldValue: { status: application.status },
+        newValue: {
+          status: "Submitted",
+          interestedUnitIds: data.interestedUnitIds,
+          desiredMOSIds: data.desiredMOSIds,
+        },
+        reason: "Pending user submitted their own enlistment application.",
+      },
+    });
+
+    await tx.notification.create({
+      data: {
+        accountId: account.id,
+        category: "applications",
+        workflowEvent:
+          application.status === "MoreInfoRequested"
+            ? "application-resubmitted"
+            : "application-submitted",
+        title: "Application submitted",
+        body: "Your enlistment application was submitted and is awaiting recruiter screening.",
+        relatedRecordType: "Application",
+        relatedRecordId: application.id,
+      },
+    });
+
+    return updated;
+  });
+
+  return { ok: true, application: result };
+}
+
+export async function withdrawOwnApplication({ prisma, account, reason }) {
+  if (!canViewOwnApplication(account)) {
+    return failure("permission_denied", "Your account cannot withdraw an application.");
+  }
+
+  const application = await findActiveOwnApplication(prisma, account.id);
+  if (!application) {
+    return failure("not_found", "No active application was found.");
+  }
+
+  if (["Accepted", "Converted", "Denied", "Withdrawn", "Closed"].includes(application.status)) {
+    return failure("invalid_transition", "This application can no longer be withdrawn.");
+  }
+
+  const now = new Date();
+  const result = await prisma.$transaction(async (tx) => {
+    const updated = await tx.application.update({
+      where: { id: application.id },
+      data: {
+        status: "Withdrawn",
+        closedAt: now,
+      },
+      include: applicationInclude(),
+    });
+
+    await tx.applicationStatusHistory.create({
+      data: {
+        applicationId: application.id,
+        oldStatus: application.status,
+        newStatus: "Withdrawn",
+        stage: "FinalDecision",
+        changedByAccountId: account.id,
+        reason: reason || "Applicant withdrew their enlistment application.",
+        permissionContext: { actorAccountId: account.id, action: "withdraw-self" },
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        actorAccountId: account.id,
+        targetAccountId: account.id,
+        module: "applications",
+        action: "withdraw-self",
+        recordType: "Application",
+        recordId: application.id,
+        oldValue: { status: application.status },
+        newValue: { status: "Withdrawn" },
+        reason: reason || "Applicant withdrew their enlistment application.",
+      },
+    });
+
+    return updated;
+  });
+
+  return { ok: true, application: result };
+}
+
+export async function requestApplicationInfo({ prisma, actor, applicationId, reason, noteBody }) {
+  if (!canRecruiterReview(actor)) {
+    return failure("permission_denied", "Recruiter review permission is required.");
+  }
+
+  const application = await prisma.application.findUnique({
+    where: { id: applicationId },
+    include: applicationInclude(),
+  });
+  if (!application) {
+    return failure("not_found", "Application was not found.");
+  }
+
+  if (!REVIEW_QUEUE_RECRUITER_STATUSES.includes(application.status)) {
+    return failure("invalid_transition", "More information cannot be requested from this status.");
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const updated = await tx.application.update({
+      where: { id: applicationId },
+      data: { status: "MoreInfoRequested" },
+      include: applicationInclude(),
+    });
+
+    await tx.applicationStatusHistory.create({
+      data: {
+        applicationId,
+        oldStatus: application.status,
+        newStatus: "MoreInfoRequested",
+        stage: "RecruiterScreening",
+        changedByAccountId: actor.id,
+        reason,
+        permissionContext: { actorAccountId: actor.id, action: "request-info" },
+      },
+    });
+
+    await tx.applicationReviewNote.create({
+      data: {
+        applicationId,
+        authorAccountId: actor.id,
+        stage: "RecruiterScreening",
+        body: noteBody || reason,
+        visibility: "Applicant",
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        actorAccountId: actor.id,
+        targetAccountId: application.accountId,
+        module: "applications",
+        action: "request-info",
+        recordType: "Application",
+        recordId: applicationId,
+        oldValue: { status: application.status },
+        newValue: { status: "MoreInfoRequested" },
+        reason,
+      },
+    });
+
+    await tx.notification.create({
+      data: {
+        accountId: application.accountId,
+        category: "applications",
+        workflowEvent: "application-more-info-requested",
+        title: "Application update requested",
+        body: "Recruiting staff requested more information on your enlistment application.",
+        relatedRecordType: "Application",
+        relatedRecordId: applicationId,
+      },
+    });
+
+    return updated;
+  });
+
+  return { ok: true, application: result };
+}
+
+export async function createOrResumeOwnApplication({ prisma, account, body }) {
+  const normalized = normalizeLegacyApplicationBody(body);
+  if (!normalized.desiredMOSIds.length && normalized.interestedUnitIds.length) {
+    const fallbackMOS = await prisma.mOS.findFirst({
+      where: {
+        unitId: { in: normalized.interestedUnitIds },
+        status: "Active",
+        recruitingOpen: true,
+      },
+      orderBy: [{ identifier: "asc" }, { name: "asc" }],
+      select: { id: true },
+    });
+    if (fallbackMOS) {
+      normalized.desiredMOSIds = [fallbackMOS.id];
+    }
+  }
+
+  return submitOwnApplication({ prisma, account, body: normalized });
 }
 
 export async function recommendApplication({ prisma, actor, applicationId, reason, noteBody }) {
@@ -237,7 +490,6 @@ export async function recommendApplication({ prisma, actor, applicationId, reaso
         status: "RecruiterRecommended",
         recruiterRecommendedByAccountId: actor.id,
         recruiterRecommendedAt: new Date(),
-        updatedAt: new Date(),
       },
       include: applicationInclude(),
     });
@@ -289,7 +541,7 @@ export async function recommendApplication({ prisma, actor, applicationId, reaso
         category: "applications",
         workflowEvent: "recruiter-recommended",
         title: "Application advanced",
-        body: "Your application passed recruiter screening and moved to target-unit review.",
+        body: "Your application passed recruiter screening and is ready for target-unit assignment.",
         relatedRecordType: "Application",
         relatedRecordId: applicationId,
       },
@@ -325,11 +577,11 @@ export async function assignApplicationUnit({
       application.status,
     )
   ) {
-    return failure("invalid_transition", "Application can no longer be reassigned.");
+    return failure("invalid_transition", "Application can no longer be assigned.");
   }
 
   const unit = await prisma.unit.findFirst({
-    where: { id: targetUnitId, status: "Active" },
+    where: { id: targetUnitId, status: "Active", recruitingOpen: true },
     select: { id: true },
   });
   if (!unit) {
@@ -389,8 +641,8 @@ export async function assignApplicationUnit({
         accountId: application.accountId,
         category: "applications",
         workflowEvent: "application-target-unit-updated",
-        title: "Application target updated",
-        body: "Your application target unit was updated and is now in target-unit review.",
+        title: "Application target assigned",
+        body: "Your application was assigned to a target unit for review.",
         relatedRecordType: "Application",
         relatedRecordId: applicationId,
       },
@@ -413,6 +665,10 @@ export async function acceptApplication({ prisma, actor, applicationId, reason, 
   });
   if (!application) {
     return failure("not_found", "Application was not found.");
+  }
+
+  if (!application.targetUnitId) {
+    return failure("invalid_transition", "Application must have an assigned target unit.");
   }
 
   if (!["RecruiterRecommended", "TargetUnitReview"].includes(application.status)) {
@@ -439,15 +695,7 @@ export async function acceptApplication({ prisma, actor, applicationId, reason, 
     return failure("configuration_error", "Member role is missing from the seeded catalog.");
   }
 
-  const preferredName =
-    firstAnswer(application, "preferred-name") ||
-    application.account.displayName ||
-    application.account.authIdentities.find((identity) => identity.provider === "Discord")
-      ?.displayName ||
-    application.account.authIdentities.find((identity) => identity.provider === "Discord")
-      ?.username ||
-    `TF20-${application.account.id.slice(-6)}`;
-
+  const preferredName = buildAcceptedProfileName(application);
   const now = new Date();
   const result = await prisma.$transaction(async (tx) => {
     const accepted = await tx.application.update({
@@ -483,6 +731,8 @@ export async function acceptApplication({ prisma, actor, applicationId, reason, 
         status: "Recruit",
         currentUnitId: application.targetUnitId,
         goodStanding: true,
+        militaryService: application.priorService,
+        source: application.source,
         joinedAt: now,
         acceptedAt: now,
         createdByAccountId: actor.id,
@@ -496,6 +746,16 @@ export async function acceptApplication({ prisma, actor, applicationId, reason, 
         newStatus: "Recruit",
         changedByAccountId: actor.id,
         reason: "Created personnel profile from accepted application.",
+      },
+    });
+
+    await tx.personnelUnitAssignment.create({
+      data: {
+        personnelProfileId: profile.id,
+        unitId: application.targetUnitId,
+        assignmentType: "Primary",
+        changedByAccountId: actor.id,
+        reason: "Initial unit assignment from accepted application.",
       },
     });
 
@@ -596,6 +856,8 @@ export async function acceptApplication({ prisma, actor, applicationId, reason, 
           applicationStatus: "Converted",
           personnelProfileId: profile.id,
           targetUnitId: application.targetUnitId,
+          source: application.source,
+          militaryService: application.priorService,
         },
         reason,
       },
@@ -628,7 +890,9 @@ export async function rejectApplication({ prisma, actor, applicationId, reason, 
     return failure("not_found", "Application was not found.");
   }
 
-  const isRecruiterStage = ["Submitted", "RecruiterScreening"].includes(application.status);
+  const isRecruiterStage = ["Submitted", "RecruiterScreening", "MoreInfoRequested"].includes(
+    application.status,
+  );
   const isTargetUnitStage = ["RecruiterRecommended", "TargetUnitReview"].includes(
     application.status,
   );
@@ -641,7 +905,10 @@ export async function rejectApplication({ prisma, actor, applicationId, reason, 
     if (!canTargetUnitReview(actor)) {
       return failure("permission_denied", "Target-unit review permission is required.");
     }
-    if (!isUnitInActorScope(actor, application.targetUnitId) && !hasGlobalReviewOverride(actor)) {
+    if (
+      !application.targetUnitId ||
+      (!isUnitInActorScope(actor, application.targetUnitId) && !hasGlobalReviewOverride(actor))
+    ) {
       return failure(
         "permission_denied",
         "Reviewer does not have target-unit authority for this application.",
@@ -654,15 +921,16 @@ export async function rejectApplication({ prisma, actor, applicationId, reason, 
   }
 
   const stage = isRecruiterStage ? "RecruiterScreening" : "FinalDecision";
+  const now = new Date();
   const result = await prisma.$transaction(async (tx) => {
     const updated = await tx.application.update({
       where: { id: applicationId },
       data: {
         status: "Denied",
         unitDecisionByAccountId: isTargetUnitStage ? actor.id : application.unitDecisionByAccountId,
-        unitDecisionAt: isTargetUnitStage ? new Date() : application.unitDecisionAt,
-        decidedAt: new Date(),
-        closedAt: new Date(),
+        unitDecisionAt: isTargetUnitStage ? now : application.unitDecisionAt,
+        decidedAt: now,
+        closedAt: now,
       },
       include: applicationInclude(),
     });
@@ -727,39 +995,342 @@ export async function rejectApplication({ prisma, actor, applicationId, reason, 
 }
 
 export function applicantFormState(body = {}) {
+  const data = normalizeApplicationData(body);
   return {
+    ...data,
     targetUnitId: normalizeText(body.targetUnitId),
-    preferredName: normalizeText(body.preferredName),
-    age: normalizeText(body.age),
-    timezone: normalizeText(body.timezone),
-    availability: normalizeText(body.availability),
-    experience: normalizeText(body.experience),
-    motivation: normalizeText(body.motivation),
+    preferredName: [data.firstName, data.lastName].filter(Boolean).join(" "),
   };
 }
 
-function buildApplicantAnswers(body) {
-  const form = applicantFormState(body);
-  return buildApplicantAnswerDefinitions().map((definition) => ({
-    section: definition.section,
-    questionKey: definition.key,
-    questionText: definition.label,
-    answer: readAnswerValue(form, definition.key),
-    sortOrder: definition.order,
-  }));
+function normalizeApplicationData(body = {}) {
+  const firstName = normalizeText(body.firstName) || firstLegacyName(body).firstName;
+  const lastName = normalizeText(body.lastName) || firstLegacyName(body).lastName;
+  const priorService = readBoolean(body.priorService ?? body.militaryService);
+  const priorArma = readBoolean(body.priorArma);
+  const leadership = readBoolean(body.leadership);
+  const interestedUnitIds = uniqueValues(
+    coerceArray(body.interestedUnitIds ?? body.interestedUnits ?? body.interestedUnit),
+  );
+  const targetUnitId = normalizeText(body.targetUnitId);
+  const normalizedInterestedUnitIds =
+    interestedUnitIds.length || !targetUnitId ? interestedUnitIds : [targetUnitId];
+
+  return {
+    firstName,
+    lastName,
+    source: normalizeText(body.source),
+    priorService,
+    servicePeriods: priorService ? normalizeServicePeriods(body) : [],
+    priorArma,
+    armaUnits: priorArma ? normalizeArmaUnits(body) : [],
+    leadership,
+    leadershipDetails: leadership ? normalizeText(body.leadershipDetails) : "",
+    interestedUnitIds: normalizedInterestedUnitIds,
+    desiredMOSIds: uniqueValues(coerceArray(body.desiredMOSIds ?? body.desiredMOS ?? body.mosIds)),
+  };
 }
 
-function readAnswerValue(form, key) {
-  switch (key) {
-    case "preferred-name":
-      return form.preferredName;
-    default:
-      return form[key] ?? "";
+function normalizeLegacyApplicationBody(body = {}) {
+  const names = firstLegacyName(body);
+  return {
+    ...body,
+    firstName: normalizeText(body.firstName) || names.firstName,
+    lastName: normalizeText(body.lastName) || names.lastName,
+    source: normalizeText(body.source) || "Discord",
+    priorService: body.priorService ?? false,
+    priorArma: body.priorArma ?? false,
+    leadership: body.leadership ?? false,
+    interestedUnitIds: coerceArray(body.interestedUnitIds ?? body.targetUnitId),
+    desiredMOSIds: coerceArray(body.desiredMOSIds),
+  };
+}
+
+function firstLegacyName(body) {
+  const preferredName = normalizeText(body.preferredName);
+  if (!preferredName) {
+    return { firstName: "", lastName: "" };
   }
+  const parts = preferredName.split(/\s+/);
+  return {
+    firstName: parts[0] ?? "",
+    lastName: parts.slice(1).join(" ") || parts[0] || "",
+  };
 }
 
-function firstAnswer(application, key) {
-  return application.answers.find((answer) => answer.questionKey === key)?.answer?.trim() ?? "";
+async function validateApplicantEligibility(prisma, account) {
+  if (!canCreateOwnApplication(account)) {
+    return failure("permission_denied", "Your account cannot create an application.");
+  }
+
+  const currentAccount = await prisma.account.findUnique({
+    where: { id: account.id },
+    include: { personnelProfile: true },
+  });
+
+  if (currentAccount?.personnelProfile) {
+    return failure("already_converted", "This account already has a personnel profile.");
+  }
+
+  return { ok: true };
+}
+
+async function findActiveOwnApplication(prisma, accountId) {
+  return prisma.application.findFirst({
+    where: {
+      accountId,
+      status: { in: ACTIVE_APPLICATION_STATUSES },
+    },
+    include: applicationInclude(),
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+async function validateApplicationData(prisma, data, { requireComplete }) {
+  const errors = [];
+
+  if (requireComplete) {
+    if (!data.firstName) errors.push("First name is required.");
+    if (!data.lastName) errors.push("Last name is required.");
+    if (!data.source) errors.push("Recruiting source is required.");
+    if (!data.interestedUnitIds.length) errors.push("At least one interested unit is required.");
+    if (!data.desiredMOSIds.length) errors.push("At least one desired MOS is required.");
+    if (data.priorService && !data.servicePeriods.length) {
+      errors.push("At least one service period is required when prior service is yes.");
+    }
+    if (data.priorArma && !data.armaUnits.length) {
+      errors.push("At least one Arma unit is required when prior Arma experience is yes.");
+    }
+    if (data.leadership && !data.leadershipDetails) {
+      errors.push("Leadership details are required when leadership experience is yes.");
+    }
+  }
+
+  if (data.source && !RECRUITING_SOURCES.includes(data.source)) {
+    errors.push("Recruiting source is invalid.");
+  }
+
+  for (const [index, period] of data.servicePeriods.entries()) {
+    if (!MILITARY_BRANCHES.includes(period.branch)) {
+      errors.push(`Service period ${index + 1} has an invalid branch.`);
+    }
+    if (!period.mos) errors.push(`Service period ${index + 1} requires a MOS.`);
+    if (!Number.isInteger(period.years) || period.years < 0 || period.years > 99) {
+      errors.push(`Service period ${index + 1} requires years from 0 to 99.`);
+    }
+  }
+
+  for (const [index, unit] of data.armaUnits.entries()) {
+    if (!unit.unitName) errors.push(`Arma unit ${index + 1} requires a unit name.`);
+    if (!unit.joinedAt) errors.push(`Arma unit ${index + 1} requires a join date.`);
+    if (!unit.stillMember && !unit.leftAt) {
+      errors.push(`Arma unit ${index + 1} requires a leave date or still-member selection.`);
+    }
+    if (!unit.stillMember && !unit.reasonLeft) {
+      errors.push(`Arma unit ${index + 1} requires a reason left.`);
+    }
+  }
+
+  if (data.interestedUnitIds.length) {
+    const units = await prisma.unit.findMany({
+      where: { id: { in: data.interestedUnitIds }, status: "Active", recruitingOpen: true },
+      select: { id: true },
+    });
+    const found = new Set(units.map((unit) => unit.id));
+    for (const unitId of data.interestedUnitIds) {
+      if (!found.has(unitId)) errors.push("One or more interested units are invalid.");
+    }
+  }
+
+  if (data.desiredMOSIds.length) {
+    const mosEntries = await prisma.mOS.findMany({
+      where: { id: { in: data.desiredMOSIds }, status: "Active", recruitingOpen: true },
+      select: { id: true, unitId: true },
+    });
+    const found = new Map(mosEntries.map((mos) => [mos.id, mos]));
+    const interestedUnitSet = new Set(data.interestedUnitIds);
+    for (const mosId of data.desiredMOSIds) {
+      const mos = found.get(mosId);
+      if (!mos) {
+        errors.push("One or more desired MOS choices are invalid.");
+        continue;
+      }
+      if (interestedUnitSet.size && !interestedUnitSet.has(mos.unitId)) {
+        errors.push("Desired MOS choices must belong to selected interested units.");
+      }
+    }
+  }
+
+  if (errors.length) {
+    return failure("validation_error", errors.join(" "));
+  }
+
+  return { ok: true };
+}
+
+async function persistApplicationData(tx, applicationId, data) {
+  await tx.application.update({
+    where: { id: applicationId },
+    data: {
+      firstName: data.firstName || null,
+      lastName: data.lastName || null,
+      source: data.source || null,
+      priorService: data.priorService,
+      priorArma: data.priorArma,
+      leadership: data.leadership,
+      leadershipDetails: data.leadershipDetails || null,
+      servicePeriods: {
+        deleteMany: {},
+        create: data.servicePeriods.map((period, index) => ({
+          branch: period.branch,
+          mos: period.mos,
+          years: period.years,
+          sortOrder: index,
+        })),
+      },
+      armaUnits: {
+        deleteMany: {},
+        create: data.armaUnits.map((unit, index) => ({
+          unitName: unit.unitName,
+          joinedAt: unit.joinedAt,
+          leftAt: unit.stillMember ? null : unit.leftAt,
+          stillMember: unit.stillMember,
+          reasonLeft: unit.reasonLeft || null,
+          sortOrder: index,
+        })),
+      },
+      interestedUnits: {
+        deleteMany: {},
+        create: data.interestedUnitIds.map((unitId, index) => ({
+          unitId,
+          sortOrder: index,
+        })),
+      },
+      desiredMOS: {
+        deleteMany: {},
+        create: data.desiredMOSIds.map((mosId, index) => ({
+          mosId,
+          sortOrder: index,
+        })),
+      },
+    },
+  });
+}
+
+function normalizeServicePeriods(body) {
+  if (Array.isArray(body.servicePeriods)) {
+    return body.servicePeriods.map(normalizeServicePeriod).filter((period) => period.hasAnyValue);
+  }
+
+  const branches = coerceArray(body.serviceBranch);
+  const mosValues = coerceArray(body.serviceMos);
+  const yearsValues = coerceArray(body.serviceYears);
+  const length = Math.max(branches.length, mosValues.length, yearsValues.length);
+  return Array.from({ length }, (_, index) =>
+    normalizeServicePeriod({
+      branch: branches[index],
+      mos: mosValues[index],
+      years: yearsValues[index],
+    }),
+  ).filter((period) => period.hasAnyValue);
+}
+
+function normalizeServicePeriod(period = {}) {
+  const branch = normalizeText(period.branch);
+  const mos = normalizeText(period.mos);
+  const yearsRaw = normalizeText(period.years);
+  const years = yearsRaw === "" ? Number.NaN : Number.parseInt(yearsRaw, 10);
+  return {
+    branch,
+    mos,
+    years,
+    hasAnyValue: Boolean(branch || mos || yearsRaw),
+  };
+}
+
+function normalizeArmaUnits(body) {
+  if (Array.isArray(body.armaUnits)) {
+    return body.armaUnits.map(normalizeArmaUnit).filter((unit) => unit.hasAnyValue);
+  }
+
+  const unitNames = coerceArray(body.armaUnit);
+  const joinedAt = coerceArray(body.armaJoinedAt);
+  const leftAt = coerceArray(body.armaLeftAt);
+  const stillMember = coerceArray(body.armaStillMember);
+  const reasonLeft = coerceArray(body.armaWhy);
+  const length = Math.max(
+    unitNames.length,
+    joinedAt.length,
+    leftAt.length,
+    stillMember.length,
+    reasonLeft.length,
+  );
+  return Array.from({ length }, (_, index) =>
+    normalizeArmaUnit({
+      unitName: unitNames[index],
+      joinedAt: joinedAt[index],
+      leftAt: leftAt[index],
+      stillMember: stillMember[index],
+      reasonLeft: reasonLeft[index],
+    }),
+  ).filter((unit) => unit.hasAnyValue);
+}
+
+function normalizeArmaUnit(unit = {}) {
+  const unitName = normalizeText(unit.unitName);
+  const joinedAt = parseOptionalDate(unit.joinedAt);
+  const leftAt = parseOptionalDate(unit.leftAt);
+  const stillMember = readBoolean(unit.stillMember);
+  const reasonLeft = normalizeText(unit.reasonLeft);
+  return {
+    unitName,
+    joinedAt,
+    leftAt,
+    stillMember,
+    reasonLeft,
+    hasAnyValue: Boolean(unitName || joinedAt || leftAt || stillMember || reasonLeft),
+  };
+}
+
+function parseOptionalDate(value) {
+  const text = normalizeText(value);
+  if (!text) return null;
+  const date = new Date(`${text}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function coerceArray(value) {
+  if (Array.isArray(value)) return value.map((item) => normalizeText(item)).filter(Boolean);
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => normalizeText(item))
+      .filter(Boolean);
+  }
+  return value == null ? [] : [normalizeText(value)].filter(Boolean);
+}
+
+function uniqueValues(values) {
+  return [...new Set(values.map((value) => normalizeText(value)).filter(Boolean))];
+}
+
+function readBoolean(value) {
+  if (value === true) return true;
+  if (value === false || value == null) return false;
+  return ["true", "yes", "on", "1"].includes(String(value).trim().toLowerCase());
+}
+
+function buildAcceptedProfileName(application) {
+  const typedName = [application.firstName, application.lastName].filter(Boolean).join(" ").trim();
+  return (
+    typedName ||
+    application.account.displayName ||
+    application.account.authIdentities.find((identity) => identity.provider === "Discord")
+      ?.displayName ||
+    application.account.authIdentities.find((identity) => identity.provider === "Discord")
+      ?.username ||
+    `TF20-${application.account.id.slice(-6)}`
+  );
 }
 
 function activeUnitScopeIds(account) {
@@ -802,6 +1373,20 @@ function applicationInclude() {
     convertedProfile: true,
     answers: {
       orderBy: { sortOrder: "asc" },
+    },
+    servicePeriods: {
+      orderBy: { sortOrder: "asc" },
+    },
+    armaUnits: {
+      orderBy: { sortOrder: "asc" },
+    },
+    interestedUnits: {
+      orderBy: { sortOrder: "asc" },
+      include: { unit: true },
+    },
+    desiredMOS: {
+      orderBy: { sortOrder: "asc" },
+      include: { mos: { include: { unit: true } } },
     },
     statusHistory: {
       orderBy: { createdAt: "asc" },

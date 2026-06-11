@@ -9,15 +9,20 @@ import {
   canReviewApplicationRecord,
   canTargetUnitReview,
   canViewOwnApplication,
+  createOrResumeDraftApplication,
   createOrResumeOwnApplication,
   getApplicationById,
-  getApplicationUnits,
   getOwnApplication,
+  getRecruitingOptions,
   isHtmlRequest,
   listReviewQueue,
   recommendApplication,
+  requestApplicationInfo,
   rejectApplication,
   acceptApplication,
+  submitOwnApplication,
+  updateOwnApplication,
+  withdrawOwnApplication,
 } from "./application-service.mjs";
 import {
   canUpdateScopedPersonnel,
@@ -353,10 +358,8 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
           );
         }
 
-        const [application, units] = await Promise.all([
-          getOwnApplication(prisma, req.context.account.id),
-          getApplicationUnits(prisma),
-        ]);
+        const application = await getOwnApplication(prisma, req.context.account.id);
+        const options = await getRecruitingOptions(prisma);
         const summary = buildSessionSummary({
           account: req.context.account,
           session: req.context.session,
@@ -368,14 +371,14 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
             renderOwnApplicationScreen({
               summary,
               application,
-              units,
+              units: options.units,
               formState: applicantFormState(),
               errorMessage: null,
             }),
           );
         }
 
-        return sendDetail(res, { application, units });
+        return sendDetail(res, { application, options });
       } catch (error) {
         return next(error);
       }
@@ -591,10 +594,11 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
 
       if (!result.ok) {
         if (isHtmlRequest(req)) {
-          const [units, application] = await Promise.all([
-            getApplicationUnits(prisma),
-            getOwnApplication(prisma, req.context.account.id),
-          ]);
+          const application = await getOwnApplication(prisma, req.context.account.id);
+          const options = await getRecruitingOptions(
+            prisma,
+            (application?.interestedUnits ?? []).map((entry) => entry.unitId),
+          );
           const summary = buildSessionSummary({
             account: req.context.account,
             session: req.context.session,
@@ -604,7 +608,7 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
             renderOwnApplicationScreen({
               summary,
               application,
-              units,
+              units: options.units,
               formState: applicantFormState(req.body),
               errorMessage: result.message,
             }),
@@ -628,6 +632,135 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       return next(error);
     }
   });
+
+  app.post("/applications/draft", requireAuthenticatedSession, async (req, res, next) => {
+    try {
+      const hasBody = Object.keys(req.body ?? {}).length > 0;
+      const result = hasBody
+        ? await updateOwnApplication({
+            prisma,
+            account: req.context.account,
+            body: req.body,
+          })
+        : await createOrResumeDraftApplication({
+            prisma,
+            account: req.context.account,
+          });
+
+      if (!result.ok) {
+        return sendError(
+          res,
+          result.code === "permission_denied" ? 403 : 400,
+          result.code,
+          result.message,
+        );
+      }
+
+      return sendDetail(res, result.application, { created: result.created ?? false });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.patch("/applications/me", requireAuthenticatedSession, async (req, res, next) => {
+    try {
+      const result = await updateOwnApplication({
+        prisma,
+        account: req.context.account,
+        body: req.body,
+      });
+
+      if (!result.ok) {
+        return sendError(
+          res,
+          result.code === "permission_denied" ? 403 : 400,
+          result.code,
+          result.message,
+        );
+      }
+
+      return sendDetail(res, result.application);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post("/applications/me/submit", requireAuthenticatedSession, async (req, res, next) => {
+    try {
+      const result = await submitOwnApplication({
+        prisma,
+        account: req.context.account,
+        body: req.body,
+      });
+
+      if (!result.ok) {
+        return sendError(
+          res,
+          result.code === "permission_denied" ? 403 : 400,
+          result.code,
+          result.message,
+        );
+      }
+
+      return sendDetail(res, result.application);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post("/applications/me/withdraw", requireAuthenticatedSession, async (req, res, next) => {
+    try {
+      const result = await withdrawOwnApplication({
+        prisma,
+        account: req.context.account,
+        reason: String(req.body.reason ?? "").trim(),
+      });
+
+      if (!result.ok) {
+        return sendError(
+          res,
+          result.code === "permission_denied" ? 403 : result.code === "not_found" ? 404 : 400,
+          result.code,
+          result.message,
+        );
+      }
+
+      return sendDetail(res, result.application);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.get(
+    "/applications/recruiting-options",
+    requireAuthenticatedSession,
+    async (req, res, next) => {
+      try {
+        if (
+          !canCreateOwnApplication(req.context.account) &&
+          !canViewOwnApplication(req.context.account) &&
+          !canRecruiterReview(req.context.account) &&
+          !canTargetUnitReview(req.context.account)
+        ) {
+          return sendError(
+            res,
+            403,
+            "permission_denied",
+            "Recruiting options are not available to this account.",
+          );
+        }
+
+        const selectedUnitIds = String(req.query.unitIds ?? "")
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean);
+        const options = await getRecruitingOptions(prisma, selectedUnitIds);
+        return sendDetail(res, options);
+      } catch (error) {
+        return next(error);
+      }
+    },
+  );
 
   app.get("/applications/review", requireAuthenticatedSession, async (req, res, next) => {
     try {
@@ -691,12 +824,15 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       }
 
       if (isHtmlRequest(req) && !isOwner) {
-        const units = await getApplicationUnits(prisma);
+        const options = await getRecruitingOptions(
+          prisma,
+          (application.interestedUnits ?? []).map((entry) => entry.unitId),
+        );
         return res.status(200).send(
           renderApplicationReviewDetailScreen({
             summary,
             application,
-            units,
+            units: options.units,
             canRecruiterReview: canRecruiterReview(req.context.account),
             canTargetUnitReview: canTargetUnitReview(req.context.account),
             errorMessage: null,
@@ -709,6 +845,48 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       return next(error);
     }
   });
+
+  app.post(
+    "/applications/:id/request-info",
+    requireAuthenticatedSession,
+    async (req, res, next) => {
+      try {
+        const reason = String(req.body.reason ?? "").trim();
+        if (!reason) {
+          return sendError(res, 400, "validation_error", "Request-info reason is required.");
+        }
+
+        const result = await requestApplicationInfo({
+          prisma,
+          actor: req.context.account,
+          applicationId: req.params.id,
+          reason,
+          noteBody: String(req.body.noteBody ?? "").trim(),
+        });
+
+        if (!result.ok) {
+          return handleApplicationActionFailure({
+            req,
+            res,
+            prisma,
+            result,
+            applicationId: req.params.id,
+            account: req.context.account,
+            session: req.context.session,
+            authIdentity: req.context.authIdentity,
+          });
+        }
+
+        if (isHtmlRequest(req)) {
+          return res.redirect(`/applications/${req.params.id}`);
+        }
+
+        return sendDetail(res, result.application);
+      } catch (error) {
+        return next(error);
+      }
+    },
+  );
 
   app.post("/applications/:id/recommend", requireAuthenticatedSession, async (req, res, next) => {
     try {
@@ -1053,21 +1231,22 @@ async function handleApplicationActionFailure({
     return sendError(res, statusCode, result.code, result.message);
   }
 
-  const [application, units] = await Promise.all([
-    getApplicationById(prisma, applicationId),
-    getApplicationUnits(prisma),
-  ]);
+  const application = await getApplicationById(prisma, applicationId);
 
   if (!application) {
     return sendError(res, statusCode, result.code, result.message);
   }
 
+  const options = await getRecruitingOptions(
+    prisma,
+    (application.interestedUnits ?? []).map((entry) => entry.unitId),
+  );
   const summary = buildSessionSummary({ account, session, authIdentity });
   return res.status(statusCode).send(
     renderApplicationReviewDetailScreen({
       summary,
       application,
-      units,
+      units: options.units,
       canRecruiterReview: canRecruiterReview(account),
       canTargetUnitReview: canTargetUnitReview(account),
       errorMessage: result.message,
