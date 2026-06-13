@@ -9,6 +9,7 @@ import {
   canReviewApplicationRecord,
   canTargetUnitReview,
   canViewOwnApplication,
+  claimApplication,
   createOrResumeDraftApplication,
   createOrResumeOwnApplication,
   getApplicationById,
@@ -16,9 +17,14 @@ import {
   getRecruitingOptions,
   isHtmlRequest,
   listReviewQueue,
+  listUnitReviewQueue,
   recommendApplication,
+  releaseApplicationClaim,
   requestApplicationInfo,
+  requestApplicationInfoFromUnit,
   rejectApplication,
+  saveApplicationReviewNote,
+  saveApplicationUnitReviewNote,
   acceptApplication,
   submitOwnApplication,
   updateOwnApplication,
@@ -28,6 +34,7 @@ import {
   canUpdateScopedPersonnel,
   canViewOwnPersonnel,
   canViewScopedPersonnel,
+  getPersonnelEditOptions,
   getOwnPersonnelProfile,
   getPersonnelLookupData,
   getPersonnelProfileById,
@@ -477,9 +484,9 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
         return sendError(res, 404, "not_found", "Personnel profile was not found.");
       }
 
-      const [listResult, lookups] = await Promise.all([
+      const [listResult, optionsResult] = await Promise.all([
         listScopedPersonnel(prisma, req.context.account, {}),
-        getPersonnelLookupData(prisma),
+        getPersonnelEditOptions(prisma, req.context.account),
       ]);
 
       if (!listResult.ok) {
@@ -488,6 +495,14 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
           listResult.code === "permission_denied" ? 403 : 400,
           listResult.code,
           listResult.message,
+        );
+      }
+      if (!optionsResult.ok) {
+        return sendError(
+          res,
+          optionsResult.code === "permission_denied" ? 403 : 400,
+          optionsResult.code,
+          optionsResult.message,
         );
       }
 
@@ -512,7 +527,7 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
           renderPersonnelDetailScreen({
             summary,
             profile,
-            lookups,
+            lookups: optionsResult.options,
             canUpdate: canUpdateScopedPersonnel(req.context.account),
             formState: buildPersonnelFormState(profile),
             errorMessage: null,
@@ -520,7 +535,13 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
         );
       }
 
-      return sendDetail(res, profile);
+      return res.status(200).json({
+        data: profile,
+        options: optionsResult.options,
+        permissions: {
+          canUpdate: canUpdateScopedPersonnel(req.context.account),
+        },
+      });
     } catch (error) {
       return next(error);
     }
@@ -799,6 +820,27 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
     }
   });
 
+  app.get("/applications/unit-review", requireAuthenticatedSession, async (req, res, next) => {
+    try {
+      if (!canTargetUnitReview(req.context.account)) {
+        return sendError(
+          res,
+          403,
+          "permission_denied",
+          "Target-unit review permission is required.",
+        );
+      }
+
+      const applications = await listUnitReviewQueue(prisma, req.context.account);
+      return res.status(200).json({
+        items: applications,
+        meta: { count: applications.length },
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
   app.get("/applications/:id", requireAuthenticatedSession, async (req, res, next) => {
     try {
       const application = await getApplicationById(prisma, req.params.id);
@@ -807,7 +849,7 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       }
 
       const isOwner = application.accountId === req.context.account.id;
-      const canReview = canReviewApplicationRecord(req.context.account, application);
+      const canReview = await canReviewApplicationRecord(prisma, req.context.account, application);
 
       if (!isOwner && !canReview) {
         return sendError(res, 403, "permission_denied", "You cannot view this application.");
@@ -846,6 +888,136 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
     }
   });
 
+  app.post("/applications/:id/claim", requireAuthenticatedSession, async (req, res, next) => {
+    try {
+      const result = await claimApplication({
+        prisma,
+        actor: req.context.account,
+        applicationId: req.params.id,
+      });
+
+      if (!result.ok) {
+        return handleApplicationActionFailure({
+          req,
+          res,
+          prisma,
+          result,
+          applicationId: req.params.id,
+          account: req.context.account,
+          session: req.context.session,
+          authIdentity: req.context.authIdentity,
+        });
+      }
+
+      if (isHtmlRequest(req)) {
+        return res.redirect(`/applications/${req.params.id}`);
+      }
+
+      return sendDetail(res, result.application);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post(
+    "/applications/:id/release-claim",
+    requireAuthenticatedSession,
+    async (req, res, next) => {
+      try {
+        const result = await releaseApplicationClaim({
+          prisma,
+          actor: req.context.account,
+          applicationId: req.params.id,
+        });
+
+        if (!result.ok) {
+          return handleApplicationActionFailure({
+            req,
+            res,
+            prisma,
+            result,
+            applicationId: req.params.id,
+            account: req.context.account,
+            session: req.context.session,
+            authIdentity: req.context.authIdentity,
+          });
+        }
+
+        if (isHtmlRequest(req)) {
+          return res.redirect(`/applications/${req.params.id}`);
+        }
+
+        return sendDetail(res, result.application);
+      } catch (error) {
+        return next(error);
+      }
+    },
+  );
+
+  app.post("/applications/:id/notes", requireAuthenticatedSession, async (req, res, next) => {
+    try {
+      const result = await saveApplicationReviewNote({
+        prisma,
+        actor: req.context.account,
+        applicationId: req.params.id,
+        body: String(req.body.noteBody ?? req.body.body ?? "").trim(),
+      });
+
+      if (!result.ok) {
+        return handleApplicationActionFailure({
+          req,
+          res,
+          prisma,
+          result,
+          applicationId: req.params.id,
+          account: req.context.account,
+          session: req.context.session,
+          authIdentity: req.context.authIdentity,
+        });
+      }
+
+      if (isHtmlRequest(req)) {
+        return res.redirect(`/applications/${req.params.id}`);
+      }
+
+      return sendDetail(res, result.application);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post("/applications/:id/unit-notes", requireAuthenticatedSession, async (req, res, next) => {
+    try {
+      const result = await saveApplicationUnitReviewNote({
+        prisma,
+        actor: req.context.account,
+        applicationId: req.params.id,
+        body: String(req.body.noteBody ?? req.body.body ?? "").trim(),
+      });
+
+      if (!result.ok) {
+        return handleApplicationActionFailure({
+          req,
+          res,
+          prisma,
+          result,
+          applicationId: req.params.id,
+          account: req.context.account,
+          session: req.context.session,
+          authIdentity: req.context.authIdentity,
+        });
+      }
+
+      if (isHtmlRequest(req)) {
+        return res.redirect(`/applications/${req.params.id}`);
+      }
+
+      return sendDetail(res, result.application);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
   app.post(
     "/applications/:id/request-info",
     requireAuthenticatedSession,
@@ -861,7 +1033,47 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
           actor: req.context.account,
           applicationId: req.params.id,
           reason,
-          noteBody: String(req.body.noteBody ?? "").trim(),
+        });
+
+        if (!result.ok) {
+          return handleApplicationActionFailure({
+            req,
+            res,
+            prisma,
+            result,
+            applicationId: req.params.id,
+            account: req.context.account,
+            session: req.context.session,
+            authIdentity: req.context.authIdentity,
+          });
+        }
+
+        if (isHtmlRequest(req)) {
+          return res.redirect(`/applications/${req.params.id}`);
+        }
+
+        return sendDetail(res, result.application);
+      } catch (error) {
+        return next(error);
+      }
+    },
+  );
+
+  app.post(
+    "/applications/:id/unit-request-info",
+    requireAuthenticatedSession,
+    async (req, res, next) => {
+      try {
+        const reason = String(req.body.reason ?? "").trim();
+        if (!reason) {
+          return sendError(res, 400, "validation_error", "Request-info reason is required.");
+        }
+
+        const result = await requestApplicationInfoFromUnit({
+          prisma,
+          actor: req.context.account,
+          applicationId: req.params.id,
+          reason,
         });
 
         if (!result.ok) {
@@ -891,16 +1103,14 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
   app.post("/applications/:id/recommend", requireAuthenticatedSession, async (req, res, next) => {
     try {
       const reason = String(req.body.reason ?? "").trim();
-      if (!reason) {
-        return sendError(res, 400, "validation_error", "Recommendation reason is required.");
-      }
+      const targetUnitId = String(req.body.targetUnitId ?? "").trim();
 
       const result = await recommendApplication({
         prisma,
         actor: req.context.account,
         applicationId: req.params.id,
         reason,
-        noteBody: String(req.body.noteBody ?? "").trim(),
+        targetUnitId,
       });
 
       if (!result.ok) {
@@ -930,8 +1140,8 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
     try {
       const reason = String(req.body.reason ?? "").trim();
       const targetUnitId = String(req.body.targetUnitId ?? "").trim();
-      if (!reason || !targetUnitId) {
-        return sendError(res, 400, "validation_error", "Target unit and reason are required.");
+      if (!targetUnitId) {
+        return sendError(res, 400, "validation_error", "Target unit is required.");
       }
 
       const result = await assignApplicationUnit({
@@ -968,16 +1178,12 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
   app.post("/applications/:id/accept", requireAuthenticatedSession, async (req, res, next) => {
     try {
       const reason = String(req.body.reason ?? "").trim();
-      if (!reason) {
-        return sendError(res, 400, "validation_error", "Acceptance reason is required.");
-      }
 
       const result = await acceptApplication({
         prisma,
         actor: req.context.account,
         applicationId: req.params.id,
         reason,
-        noteBody: String(req.body.noteBody ?? "").trim(),
       });
 
       if (!result.ok) {
@@ -1015,7 +1221,6 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
         actor: req.context.account,
         applicationId: req.params.id,
         reason,
-        noteBody: String(req.body.noteBody ?? "").trim(),
       });
 
       if (!result.ok) {
@@ -1120,6 +1325,7 @@ function buildPersonnelFormState(profileOrBody = {}) {
     currentRankId: String(source.currentRankId ?? ""),
     currentBilletId: String(source.currentBilletId ?? ""),
     currentMOSId: String(source.currentMOSId ?? ""),
+    currentSecondaryMOSId: String(source.currentSecondaryMOSId ?? ""),
     goodStanding: String(
       typeof source.goodStanding === "boolean" ? source.goodStanding : (source.goodStanding ?? ""),
     ),
@@ -1223,9 +1429,11 @@ async function handleApplicationActionFailure({
       ? 403
       : result.code === "not_found"
         ? 404
-        : result.code === "configuration_error"
-          ? 500
-          : 400;
+        : result.code === "already_claimed" || result.code === "claim_required"
+          ? 409
+          : result.code === "configuration_error"
+            ? 500
+            : 400;
 
   if (!isHtmlRequest(req)) {
     return sendError(res, statusCode, result.code, result.message);
@@ -1272,9 +1480,9 @@ async function handlePersonnelActionFailure({
     return sendError(res, statusCode, result.code, result.message);
   }
 
-  const [profile, lookups] = await Promise.all([
+  const [profile, optionsResult] = await Promise.all([
     getPersonnelProfileById(prisma, personnelProfileId),
-    getPersonnelLookupData(prisma),
+    getPersonnelEditOptions(prisma, account),
   ]);
 
   if (!profile) {
@@ -1286,7 +1494,7 @@ async function handlePersonnelActionFailure({
     renderPersonnelDetailScreen({
       summary,
       profile,
-      lookups,
+      lookups: optionsResult.ok ? optionsResult.options : await getPersonnelLookupData(prisma),
       canUpdate: canUpdateScopedPersonnel(account),
       formState: buildPersonnelFormState(body),
       errorMessage: result.message,

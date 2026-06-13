@@ -3,6 +3,10 @@ import fs from "node:fs";
 import { test } from "node:test";
 
 import {
+  SITE_MAP_SECTIONS,
+  findNavigationNodeByPath,
+  findSiteMapNodeByPath,
+  isSectionDashboardMatch,
   normalizeSiteMapKey,
   resolveVisibleNavigation,
   validateSiteMapText,
@@ -23,7 +27,7 @@ test("implementation sitemap matches SITE_MAP.TXT after normalization", () => {
   assert.deepEqual(result.errors, []);
   assert.equal(result.ok, true);
   assert.deepEqual(result.parsed.sections, ["user", "staff", "recruiting", "training", "admin"]);
-  assert.equal(result.parsed.pages.length, 13);
+  assert.equal(result.parsed.pages.length, 14);
   assert.equal(result.parsed.subpages.length, 5);
 });
 
@@ -50,6 +54,89 @@ test("active member navigation keeps user self pages separate from staff pages",
       "user_support",
     ],
   );
+});
+
+test("section dashboard stat cards are limited to section dashboard pages", () => {
+  const dashboardMatches = SITE_MAP_SECTIONS.map((section) => findSiteMapNodeByPath(section.path));
+
+  assert.deepEqual(
+    dashboardMatches.map((match) => match.node.id),
+    [
+      "user_dashboard",
+      "staff_dashboard",
+      "recruiting_dashboard",
+      "training_dashboard",
+      "admin_dashboard",
+    ],
+  );
+  assert.ok(dashboardMatches.every(isSectionDashboardMatch));
+
+  const nonDashboardMatches = SITE_MAP_SECTIONS.flatMap((section) =>
+    section.pages.flatMap((page) => [
+      ...(page.id.endsWith("_dashboard") ? [] : [findSiteMapNodeByPath(page.path)]),
+      ...(page.subpages ?? []).map((subpage) => findSiteMapNodeByPath(subpage.path)),
+    ]),
+  );
+
+  assert.ok(nonDashboardMatches.length > 0);
+  assert.ok(nonDashboardMatches.every((match) => !isSectionDashboardMatch(match)));
+});
+
+test("recruiting application detail route keeps applications navigation active", () => {
+  const navigation = resolveVisibleNavigation("Active", ["applications.review-recruiter"]);
+  const visibleMatch = findNavigationNodeByPath(
+    navigation,
+    "/recruiting/applications/test-application-id",
+  );
+  const siteMapMatch = findSiteMapNodeByPath("/recruiting/applications/test-application-id");
+
+  assert.equal(visibleMatch.type, "detail");
+  assert.equal(visibleMatch.section.id, "recruiting");
+  assert.equal(visibleMatch.page.id, "recruiting_applications");
+  assert.equal(visibleMatch.node.id, "recruiting_application_detail");
+  assert.equal(visibleMatch.node.label, "Application Detail");
+  assert.equal(visibleMatch.params.applicationId, "test-application-id");
+  assert.equal(siteMapMatch.page.id, "recruiting_applications");
+  assert.equal(isSectionDashboardMatch(visibleMatch), false);
+});
+
+test("staff applicant review detail route keeps applicant review navigation active", () => {
+  const navigation = resolveVisibleNavigation("Active", [
+    "personnel.view-scoped",
+    "applications.review-target-unit",
+  ]);
+  const visibleMatch = findNavigationNodeByPath(
+    navigation,
+    "/staff/applicant-review/test-application-id",
+  );
+  const siteMapMatch = findSiteMapNodeByPath("/staff/applicant-review/test-application-id");
+
+  assert.equal(visibleMatch.type, "detail");
+  assert.equal(visibleMatch.section.id, "staff");
+  assert.equal(visibleMatch.page.id, "staff_applicant_review");
+  assert.equal(visibleMatch.node.id, "staff_applicant_review_detail");
+  assert.equal(visibleMatch.node.label, "Applicant Detail");
+  assert.equal(visibleMatch.params.applicationId, "test-application-id");
+  assert.equal(siteMapMatch.page.id, "staff_applicant_review");
+  assert.equal(isSectionDashboardMatch(visibleMatch), false);
+});
+
+test("staff personnel profile detail route keeps personnel management navigation active", () => {
+  const navigation = resolveVisibleNavigation("Active", ["personnel.view-scoped"]);
+  const visibleMatch = findNavigationNodeByPath(
+    navigation,
+    "/staff/personnel-management/test-personnel-id",
+  );
+  const siteMapMatch = findSiteMapNodeByPath("/staff/personnel-management/test-personnel-id");
+
+  assert.equal(visibleMatch.type, "detail");
+  assert.equal(visibleMatch.section.id, "staff");
+  assert.equal(visibleMatch.page.id, "staff_personnel_management");
+  assert.equal(visibleMatch.node.id, "staff_personnel_profile_detail");
+  assert.equal(visibleMatch.node.label, "Personnel Profile");
+  assert.equal(visibleMatch.params.personnelId, "test-personnel-id");
+  assert.equal(siteMapMatch.page.id, "staff_personnel_management");
+  assert.equal(isSectionDashboardMatch(visibleMatch), false);
 });
 
 test("staff personnel management subpages are filtered independently", () => {

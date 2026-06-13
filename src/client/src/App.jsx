@@ -20,10 +20,22 @@ import {
 } from "lucide-react";
 
 import {
+  accountStatusLabel,
+  applicationStatusLabel,
+  billetDisplayLabel,
+  humanizeIdentifier,
+  mosDisplayLabel,
+  personnelStatusLabel,
+  rankDisplayLabel,
+  unitDisplayLabel,
+} from "../../shared/display-labels.mjs";
+import {
   findNavigationNodeByPath,
   findSiteMapNodeByPath,
+  isSectionDashboardMatch,
   resolveVisibleNavigation,
 } from "../../shared/site-map.mjs";
+import { buildPersonnelProfileViewModel } from "../../shared/profile-view-model.mjs";
 import tf20Crest from "./assets/tf20-crest.png";
 
 const ICONS = {
@@ -348,6 +360,8 @@ function TopBar({ activeDefinition, session, onOpenMenu }) {
     session.summary?.authIdentity?.displayName ??
     session.summary?.authIdentity?.username ??
     "TF20 user";
+  const title =
+    activeDefinition.id === "user_application" ? "Enlistment Application" : activeDefinition.label;
 
   return (
     <header className="top-bar">
@@ -361,7 +375,7 @@ function TopBar({ activeDefinition, session, onOpenMenu }) {
       </button>
       <div className="top-heading">
         <span className="eyebrow">Task Force 20</span>
-        <h2>{activeDefinition.label}</h2>
+        <h2>{title}</h2>
       </div>
       <div className="account-strip">
         <div className="account-avatar" aria-hidden="true">
@@ -369,7 +383,7 @@ function TopBar({ activeDefinition, session, onOpenMenu }) {
         </div>
         <div className="account-copy">
           <strong>{displayName}</strong>
-          <span>{session.summary?.account?.status ?? "Unknown"}</span>
+          <span>{accountStatusLabel(session.summary?.account?.status)}</span>
         </div>
         <a className="logout-button" href="/auth/logout" aria-label="Log out" title="Log out">
           <LogOut size={18} />
@@ -396,13 +410,36 @@ function Workspace({ navigation, path, session, siteMapMatch, visibleMatch, onNa
     case "staff_personnel_management":
       return (
         <StaffPersonnelManagementWorkspace
-          session={session}
           subpages={visibleMatch.page.subpages ?? []}
           onNavigate={onNavigate}
         />
       );
+    case "staff_personnel_profile_detail":
+      return (
+        <StaffPersonnelProfileWorkspace
+          personnelId={visibleMatch.params?.personnelId}
+          onNavigate={onNavigate}
+        />
+      );
+    case "staff_applicant_review":
+      return <StaffApplicantReviewWorkspace onNavigate={onNavigate} />;
+    case "staff_applicant_review_detail":
+      return (
+        <StaffApplicantReviewWorkspace
+          applicationId={visibleMatch.params?.applicationId}
+          onNavigate={onNavigate}
+        />
+      );
     case "recruiting_applications":
-      return <ApplicationsWorkspace />;
+      return <ApplicationsWorkspace session={session} onNavigate={onNavigate} />;
+    case "recruiting_application_detail":
+      return (
+        <ApplicationsWorkspace
+          applicationId={visibleMatch.params?.applicationId}
+          session={session}
+          onNavigate={onNavigate}
+        />
+      );
     default:
       return <ContractPlaceholder match={visibleMatch} />;
   }
@@ -440,25 +477,80 @@ function DashboardWorkspace({ navigation, session, onNavigate }) {
 }
 
 function ProfileWorkspace({ session }) {
+  const resource = useApiResource("/personnel/self");
+
+  if (resource.status === "loading") {
+    return <SkeletonRows />;
+  }
+
+  if (resource.status === "error") {
+    return <EmptyState title="Profile unavailable" detail={resource.error} />;
+  }
+
+  const profile = resource.data?.data ?? null;
+  const viewModel = buildPersonnelProfileViewModel(profile, session.summary);
+
   return (
     <div className="workspace-grid">
-      <MetricPanel label="Account" value={session.summary?.account?.status ?? "Unknown"} />
-      <MetricPanel
-        label="Gate"
-        value={session.gateState ?? session.summary?.gateState ?? "Unknown"}
-      />
-      <section className="wide-panel">
-        <PanelHeader title="Account Snapshot" />
-        <KeyValueList
-          items={[
-            ["Display name", session.summary?.account?.displayName ?? "Not set"],
-            ["Auth provider", session.summary?.authIdentity?.provider ?? "Unknown"],
-            ["Username", session.summary?.authIdentity?.username ?? "Unknown"],
-            ["Session", session.summary?.session?.id ?? "Active"],
-          ]}
-        />
-      </section>
+      <PersonnelProfileCard viewModel={viewModel} />
     </div>
+  );
+}
+
+function PersonnelProfileCard({ viewModel }) {
+  return (
+    <section className="wide-panel personnel-profile-card">
+      <PersonnelProfileReadOnly viewModel={viewModel} />
+    </section>
+  );
+}
+
+function PersonnelProfileReadOnly({ actions = null, viewModel }) {
+  return (
+    <div className="personnel-profile-stack">
+      <PersonnelProfileHeading actions={actions} title={viewModel.title} />
+      <ApplicationReviewSection title="PERSONNEL STATUS">
+        <KeyValueList items={viewModel.personnelStatus} />
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="ASSIGNMENT">
+        <KeyValueList items={viewModel.assignment} />
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="QUALIFICATIONS">
+        <ProfileRecordList items={viewModel.qualifications} />
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="AWARDS">
+        <ProfileRecordList items={viewModel.awards} />
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="RIBBONS">
+        <ProfileRecordList items={viewModel.ribbons} />
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="ACHIEVEMENTS">
+        <ProfileRecordList items={viewModel.achievements} />
+      </ApplicationReviewSection>
+    </div>
+  );
+}
+
+function PersonnelProfileHeading({ actions = null, title }) {
+  return (
+    <div className="personnel-profile-heading">
+      <h3 className="personnel-profile-title">{title}</h3>
+      {actions ? <div className="button-row">{actions}</div> : null}
+    </div>
+  );
+}
+
+function ProfileRecordList({ items }) {
+  if (!items.length) {
+    return null;
+  }
+
+  return (
+    <ul className="profile-record-list">
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
   );
 }
 
@@ -467,11 +559,15 @@ function StaffPersonnelManagementWorkspace({ subpages, onNavigate }) {
 
   return (
     <div className="workspace-grid">
-      <MetricPanel label="Workspace" value="Personnel Management" />
-      <MetricPanel label="Status" value={resource.label} />
       <section className="wide-panel">
         <PanelHeader title="Staff Personnel Roster" />
-        <ResourceContent resource={resource} type="personnel-list" />
+        <ResourceContent
+          onOpenPersonnel={(id) =>
+            onNavigate(`/staff/personnel-management/${encodeURIComponent(id)}`)
+          }
+          resource={resource}
+          type="personnel-list"
+        />
       </section>
       <section className="wide-panel">
         <PanelHeader title="Personnel Management Subpages" />
@@ -494,6 +590,286 @@ function StaffPersonnelManagementWorkspace({ subpages, onNavigate }) {
         )}
       </section>
     </div>
+  );
+}
+
+function StaffPersonnelProfileWorkspace({ personnelId, onNavigate }) {
+  const [detail, setDetail] = useState({
+    status: "loading",
+    profile: null,
+    options: null,
+    permissions: {},
+    error: null,
+  });
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState(() => blankPersonnelProfileForm());
+  const [message, setMessage] = useState("");
+
+  const load = async () => {
+    if (!personnelId) {
+      setDetail({
+        status: "error",
+        profile: null,
+        options: null,
+        permissions: {},
+        error: "Personnel profile ID is required.",
+      });
+      return;
+    }
+
+    setDetail({
+      status: "loading",
+      profile: null,
+      options: null,
+      permissions: {},
+      error: null,
+    });
+    const result = await fetchJson(`/personnel/${encodeURIComponent(personnelId)}`);
+    if (!result.ok) {
+      setDetail({
+        status: "error",
+        profile: null,
+        options: null,
+        permissions: {},
+        error: result.payload?.error?.message ?? "Unable to load personnel profile.",
+      });
+      return;
+    }
+
+    const profile = result.payload.data;
+    setDetail({
+      status: "ready",
+      profile,
+      options: result.payload.options ?? {},
+      permissions: result.payload.permissions ?? {},
+      error: null,
+    });
+    setForm(personnelProfileToForm(profile));
+    setEditing(false);
+    setMessage("");
+  };
+
+  useEffect(() => {
+    load();
+  }, [personnelId]);
+
+  const updateForm = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+  const save = async () => {
+    setMessage("Saving profile...");
+    const result = await fetchJson(`/personnel/${encodeURIComponent(personnelId)}`, {
+      method: "PATCH",
+      body: {
+        ...form,
+        reason: "Staff profile edit",
+      },
+    });
+
+    if (!result.ok) {
+      setMessage(result.payload?.error?.message ?? "Unable to save profile.");
+      return;
+    }
+
+    const profile = result.payload.data;
+    setDetail((current) => ({ ...current, profile }));
+    setForm(personnelProfileToForm(profile));
+    setEditing(false);
+    setMessage("Profile saved.");
+  };
+
+  if (detail.status === "loading") {
+    return <SkeletonRows />;
+  }
+
+  if (detail.status === "error") {
+    return <EmptyState title="Personnel profile unavailable" detail={detail.error} />;
+  }
+
+  const profile = detail.profile;
+  const viewModel = buildPersonnelProfileViewModel(profile);
+  const canUpdate = Boolean(detail.permissions?.canUpdate);
+  const actions = (
+    <>
+      <button
+        className="secondary-action"
+        type="button"
+        onClick={() => onNavigate("/staff/personnel-management")}
+      >
+        Back to personnel
+      </button>
+      {editing ? (
+        <>
+          <button className="primary-action button-like" type="button" onClick={save}>
+            Save
+          </button>
+          <button
+            className="secondary-action"
+            type="button"
+            onClick={() => {
+              setForm(personnelProfileToForm(profile));
+              setEditing(false);
+              setMessage("");
+            }}
+          >
+            Cancel
+          </button>
+        </>
+      ) : (
+        <button
+          className="secondary-action"
+          disabled={!canUpdate}
+          type="button"
+          onClick={() => setEditing(true)}
+        >
+          Edit
+        </button>
+      )}
+    </>
+  );
+
+  return (
+    <div className="workspace-grid">
+      <section className="wide-panel personnel-profile-card">
+        {editing ? (
+          <div className="personnel-profile-stack">
+            <PersonnelProfileHeading actions={actions} title={viewModel.title} />
+            <PersonnelProfileEditForm
+              form={form}
+              onChange={updateForm}
+              options={detail.options ?? {}}
+              viewModel={viewModel}
+            />
+          </div>
+        ) : (
+          <PersonnelProfileReadOnly actions={actions} viewModel={viewModel} />
+        )}
+        {!canUpdate ? (
+          <p className="muted-copy profile-edit-message">
+            You can view this profile, but you do not have personnel update permission.
+          </p>
+        ) : null}
+        {message ? <p className="muted-copy profile-edit-message">{message}</p> : null}
+      </section>
+    </div>
+  );
+}
+
+function PersonnelProfileEditForm({ form, onChange, options, viewModel }) {
+  return (
+    <>
+      <ApplicationReviewSection title="PERSONNEL STATUS">
+        <div className="form-grid">
+          <Field label="Name">
+            <input value={form.name} onChange={(event) => onChange("name", event.target.value)} />
+          </Field>
+          <Field label="Status">
+            <select
+              value={form.status}
+              onChange={(event) => onChange("status", event.target.value)}
+            >
+              {(options.statuses ?? []).map((status) => (
+                <option key={status} value={status}>
+                  {personnelStatusLabel(status)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Standing">
+            <select
+              value={form.goodStanding}
+              onChange={(event) => onChange("goodStanding", event.target.value)}
+            >
+              {(options.standingOptions ?? defaultStandingOptions()).map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <KeyValueList items={viewModel.personnelStatus.slice(2)} />
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="ASSIGNMENT">
+        <div className="form-grid">
+          <Field label="Unit">
+            <select
+              value={form.currentUnitId}
+              onChange={(event) => onChange("currentUnitId", event.target.value)}
+            >
+              <option value="">Unassigned</option>
+              {(options.units ?? []).map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  {unitDisplayLabel(unit)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Assignment">
+            <select
+              value={form.currentBilletId}
+              onChange={(event) => onChange("currentBilletId", event.target.value)}
+            >
+              <option value="">Unassigned</option>
+              {(options.billets ?? []).map((billet) => (
+                <option key={billet.id} value={billet.id}>
+                  {billetDisplayLabel(billet)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Rank">
+            <select
+              value={form.currentRankId}
+              onChange={(event) => onChange("currentRankId", event.target.value)}
+            >
+              <option value="">Unassigned</option>
+              {(options.ranks ?? []).map((rank) => (
+                <option key={rank.id} value={rank.id}>
+                  {rankDisplayLabel(rank)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Primary MOS">
+            <select
+              value={form.currentMOSId}
+              onChange={(event) => onChange("currentMOSId", event.target.value)}
+            >
+              <option value="">Unassigned</option>
+              {(options.mos ?? []).map((mos) => (
+                <option key={mos.id} value={mos.id}>
+                  {mosDisplayLabel(mos)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Secondary MOS">
+            <select
+              value={form.currentSecondaryMOSId}
+              onChange={(event) => onChange("currentSecondaryMOSId", event.target.value)}
+            >
+              <option value="">None</option>
+              {(options.mos ?? []).map((mos) => (
+                <option key={mos.id} value={mos.id}>
+                  {mosDisplayLabel(mos)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="QUALIFICATIONS">
+        <ProfileRecordList items={viewModel.qualifications} />
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="AWARDS">
+        <ProfileRecordList items={viewModel.awards} />
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="RIBBONS">
+        <ProfileRecordList items={viewModel.ribbons} />
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="ACHIEVEMENTS">
+        <ProfileRecordList items={viewModel.achievements} />
+      </ApplicationReviewSection>
+    </>
   );
 }
 
@@ -524,7 +900,13 @@ function ApplicantApplicationWorkspace() {
   }, []);
 
   const application = resource.data?.application ?? null;
-  const options = resource.data?.options ?? { sources: [], branches: [], units: [], mos: [] };
+  const options = resource.data?.options ?? {
+    sources: [],
+    branches: [],
+    timeZones: [],
+    units: [],
+    mos: [],
+  };
   const editable = !application || ["Draft", "MoreInfoRequested"].includes(application.status);
   const terminal = ["Converted", "Denied", "Withdrawn", "Closed"].includes(application?.status);
 
@@ -550,7 +932,6 @@ function ApplicantApplicationWorkspace() {
   return (
     <div className="application-page">
       <section className="wide-panel application-panel">
-        <PanelHeader title="Enlistment Application" />
         {message ? (
           <div className="form-message">
             <strong>{message}</strong>
@@ -619,13 +1000,169 @@ function ApplicantApplicationWorkspace() {
   );
 }
 
-function ApplicationsWorkspace() {
+function ApplicationsWorkspace({ applicationId = null, session, onNavigate }) {
+  if (applicationId) {
+    return (
+      <ApplicationDetailWorkspace
+        applicationId={applicationId}
+        session={session}
+        onNavigate={onNavigate}
+      />
+    );
+  }
+
+  return <ApplicationListWorkspace session={session} onNavigate={onNavigate} />;
+}
+
+function StaffApplicantReviewWorkspace({ applicationId = null, onNavigate }) {
+  if (applicationId) {
+    return (
+      <StaffApplicationDetailWorkspace applicationId={applicationId} onNavigate={onNavigate} />
+    );
+  }
+
+  return <StaffApplicationListWorkspace onNavigate={onNavigate} />;
+}
+
+function StaffApplicationListWorkspace({ onNavigate }) {
   const [queue, setQueue] = useState({ status: "loading", items: [], error: null });
-  const [selectedId, setSelectedId] = useState(null);
-  const [detail, setDetail] = useState({ status: "idle", application: null, error: null });
-  const [options, setOptions] = useState({ units: [] });
-  const [actionState, setActionState] = useState({ reason: "", noteBody: "", targetUnitId: "" });
+
+  const loadQueue = async () => {
+    setQueue({ status: "loading", items: [], error: null });
+    const result = await fetchJson("/applications/unit-review");
+    if (!result.ok) {
+      setQueue({
+        status: "error",
+        items: [],
+        error: result.payload?.error?.message ?? "Unable to load applicants.",
+      });
+      return;
+    }
+    setQueue({ status: "ready", items: result.payload.items ?? [], error: null });
+  };
+
+  useEffect(() => {
+    loadQueue();
+  }, []);
+
+  return (
+    <div className="application-page">
+      <section className="wide-panel application-panel">
+        <PanelHeader title="Applicant Review" />
+        <ApplicationList
+          items={queue.items}
+          loading={queue.status === "loading"}
+          error={queue.error}
+          onOpen={(id) => onNavigate(`/staff/applicant-review/${encodeURIComponent(id)}`)}
+        />
+      </section>
+    </div>
+  );
+}
+
+function StaffApplicationDetailWorkspace({ applicationId, onNavigate }) {
+  const [detail, setDetail] = useState({ status: "loading", application: null, error: null });
+  const [actionState, setActionState] = useState({ reason: "", noteBody: "" });
   const [message, setMessage] = useState("");
+
+  const loadDetail = async (applicationId) => {
+    if (!applicationId) {
+      setDetail({ status: "error", application: null, error: "Application ID is required." });
+      return;
+    }
+    setDetail({ status: "loading", application: null, error: null });
+    const result = await fetchJson(`/applications/${applicationId}`);
+    if (!result.ok) {
+      setDetail({
+        status: "error",
+        application: null,
+        error: result.payload?.error?.message ?? "Unable to load application.",
+      });
+      return;
+    }
+    setDetail({ status: "ready", application: result.payload.data, error: null });
+  };
+
+  useEffect(() => {
+    loadDetail(applicationId);
+  }, [applicationId]);
+
+  const runAction = async (actionName, path, requirements = {}) => {
+    const reason = actionState.reason.trim();
+    if (requirements.reason && !reason) {
+      setMessage(`Action reason is required for ${actionName}.`);
+      return;
+    }
+
+    setMessage(`${actionName}...`);
+    const result = await fetchJson(path, {
+      method: "POST",
+      body: { reason },
+    });
+    if (!result.ok) {
+      setMessage(result.payload?.error?.message ?? `${actionName} failed.`);
+      return;
+    }
+    setMessage(`${actionName} complete.`);
+    await loadDetail(applicationId);
+  };
+
+  const saveNote = async () => {
+    const noteBody = actionState.noteBody.trim();
+    if (!noteBody) {
+      setMessage("Staff note is required.");
+      return;
+    }
+
+    setMessage("Saving note...");
+    const result = await fetchJson(`/applications/${applicationId}/unit-notes`, {
+      method: "POST",
+      body: { noteBody },
+    });
+    if (!result.ok) {
+      setMessage(result.payload?.error?.message ?? "Save note failed.");
+      return;
+    }
+
+    setActionState((current) => ({ ...current, noteBody: "" }));
+    setMessage("Note saved.");
+    await loadDetail(applicationId);
+  };
+
+  return (
+    <div className="application-page">
+      {message ? (
+        <section className="wide-panel notice-panel">
+          <strong>{message}</strong>
+        </section>
+      ) : null}
+      <section className="wide-panel application-panel">
+        <div className="application-detail-toolbar">
+          <button
+            className="secondary-action"
+            type="button"
+            onClick={() => onNavigate("/staff/applicant-review")}
+          >
+            Back to applicants
+          </button>
+        </div>
+        <StaffApplicationDetail
+          actionState={actionState}
+          application={detail.application}
+          detail={detail}
+          onAction={runAction}
+          onSaveNote={saveNote}
+          setActionState={setActionState}
+        />
+      </section>
+    </div>
+  );
+}
+
+function ApplicationListWorkspace({ session, onNavigate }) {
+  const [queue, setQueue] = useState({ status: "loading", items: [], error: null });
+  const [message, setMessage] = useState("");
+  const currentAccountId = session?.summary?.account?.id ?? "";
 
   const loadQueue = async () => {
     setQueue({ status: "loading", items: [], error: null });
@@ -641,9 +1178,58 @@ function ApplicationsWorkspace() {
     setQueue({ status: "ready", items: result.payload.items ?? [], error: null });
   };
 
+  const claimApplication = async (applicationId) => {
+    setMessage("Claiming application...");
+    const result = await fetchJson(`/applications/${applicationId}/claim`, {
+      method: "POST",
+      body: {},
+    });
+    if (!result.ok) {
+      setMessage(result.payload?.error?.message ?? "Claim application failed.");
+      return;
+    }
+
+    setMessage("Application claimed.");
+    await loadQueue();
+  };
+
+  useEffect(() => {
+    loadQueue();
+  }, []);
+
+  return (
+    <div className="application-page">
+      {message ? (
+        <section className="wide-panel notice-panel">
+          <strong>{message}</strong>
+        </section>
+      ) : null}
+      <section className="wide-panel application-panel">
+        <PanelHeader title="Applications" />
+        <ApplicationList
+          currentAccountId={currentAccountId}
+          items={queue.items}
+          loading={queue.status === "loading"}
+          error={queue.error}
+          onClaim={claimApplication}
+          onOpen={(id) => onNavigate(`/recruiting/applications/${encodeURIComponent(id)}`)}
+          showClaimColumn
+        />
+      </section>
+    </div>
+  );
+}
+
+function ApplicationDetailWorkspace({ applicationId, session, onNavigate }) {
+  const [detail, setDetail] = useState({ status: "loading", application: null, error: null });
+  const [options, setOptions] = useState({ units: [] });
+  const [actionState, setActionState] = useState({ reason: "", noteBody: "", targetUnitId: "" });
+  const [message, setMessage] = useState("");
+  const currentAccountId = session?.summary?.account?.id ?? "";
+
   const loadDetail = async (applicationId) => {
     if (!applicationId) {
-      setDetail({ status: "idle", application: null, error: null });
+      setDetail({ status: "error", application: null, error: "Application ID is required." });
       return;
     }
     setDetail({ status: "loading", application: null, error: null });
@@ -664,25 +1250,38 @@ function ApplicationsWorkspace() {
   };
 
   useEffect(() => {
-    loadQueue();
+    loadDetail(applicationId);
     fetchJson("/applications/recruiting-options").then((result) => {
       if (result.ok) {
         setOptions(result.payload.data ?? { units: [] });
       }
     });
-  }, []);
+  }, [applicationId]);
 
-  useEffect(() => {
-    loadDetail(selectedId);
-  }, [selectedId]);
+  const runAction = async (actionName, path, extraBody = {}, requirements = {}) => {
+    if (
+      requirements.claimedByCurrentUser &&
+      !isClaimedByCurrentUser(detail.application, currentAccountId)
+    ) {
+      setMessage("Claim this application before making recruiter changes.");
+      return;
+    }
 
-  const runAction = async (actionName, path, extraBody = {}) => {
+    const reason = actionState.reason.trim();
+    if (requirements.reason && !reason) {
+      setMessage(`Action reason is required for ${actionName}.`);
+      return;
+    }
+    if (requirements.targetUnit && !actionState.targetUnitId) {
+      setMessage("Select a target unit before recommending the applicant.");
+      return;
+    }
+
     setMessage(`${actionName}...`);
     const result = await fetchJson(path, {
       method: "POST",
       body: {
-        reason: actionState.reason,
-        noteBody: actionState.noteBody,
+        reason,
         ...extraBody,
       },
     });
@@ -691,43 +1290,76 @@ function ApplicationsWorkspace() {
       return;
     }
     setMessage(`${actionName} complete.`);
-    await loadQueue();
-    await loadDetail(selectedId);
+    await loadDetail(applicationId);
+  };
+
+  const saveNote = async () => {
+    if (!isClaimedByCurrentUser(detail.application, currentAccountId)) {
+      setMessage("Claim this application before saving recruiting notes.");
+      return;
+    }
+
+    const noteBody = actionState.noteBody.trim();
+    if (!noteBody) {
+      setMessage("Recruiting note is required.");
+      return;
+    }
+
+    setMessage("Saving note...");
+    const result = await fetchJson(`/applications/${applicationId}/notes`, {
+      method: "POST",
+      body: { noteBody },
+    });
+    if (!result.ok) {
+      setMessage(result.payload?.error?.message ?? "Save note failed.");
+      return;
+    }
+
+    setActionState((current) => ({ ...current, noteBody: "" }));
+    setMessage("Note saved.");
+    await loadDetail(applicationId);
+  };
+
+  const releaseClaim = async () => {
+    setMessage("Releasing application...");
+    const result = await fetchJson(`/applications/${applicationId}/release-claim`, {
+      method: "POST",
+      body: {},
+    });
+    if (!result.ok) {
+      setMessage(result.payload?.error?.message ?? "Release application failed.");
+      return;
+    }
+
+    setMessage("Application released.");
+    await loadDetail(applicationId);
   };
 
   return (
-    <div className="workspace-grid">
-      <MetricPanel label="Workspace" value="Recruiting" />
-      <MetricPanel
-        label="Queue"
-        value={queue.status === "ready" ? String(queue.items.length) : humanize(queue.status)}
-      />
-      <MetricPanel
-        label="Selected"
-        value={detail.application ? humanize(detail.application.status) : "None"}
-      />
+    <div className="application-page">
       {message ? (
         <section className="wide-panel notice-panel">
           <strong>{message}</strong>
         </section>
       ) : null}
-      <section className="wide-panel">
-        <PanelHeader title="Applications" />
-        <ApplicationList
-          items={queue.items}
-          loading={queue.status === "loading"}
-          error={queue.error}
-          onSelect={setSelectedId}
-          selectedId={selectedId}
-        />
-      </section>
-      <section className="wide-panel">
-        <PanelHeader title="Application Detail" />
+      <section className="wide-panel application-panel">
+        <div className="application-detail-toolbar">
+          <button
+            className="secondary-action"
+            type="button"
+            onClick={() => onNavigate("/recruiting/applications")}
+          >
+            Back to applications
+          </button>
+        </div>
         <ReviewerApplicationDetail
           actionState={actionState}
           application={detail.application}
+          currentAccountId={currentAccountId}
           detail={detail}
           onAction={runAction}
+          onReleaseClaim={releaseClaim}
+          onSaveNote={saveNote}
           options={options}
           setActionState={setActionState}
         />
@@ -737,10 +1369,16 @@ function ApplicationsWorkspace() {
 }
 
 function ContractPlaceholder({ match }) {
+  const showDashboardStats = isSectionDashboardMatch(match);
+
   return (
     <div className="workspace-grid">
-      <MetricPanel label="Section" value={match.section.label} />
-      <MetricPanel label="Page" value={match.node.label} />
+      {showDashboardStats ? (
+        <>
+          <MetricPanel label="Section" value={match.section.label} />
+          <MetricPanel label="Page" value={match.node.label} />
+        </>
+      ) : null}
       <section className="wide-panel">
         <PanelHeader title={match.node.label} />
         <EmptyState
@@ -821,7 +1459,7 @@ function useApiResource(endpoint) {
   return state;
 }
 
-function ResourceContent({ resource, type }) {
+function ResourceContent({ onOpenPersonnel = null, resource, type }) {
   if (resource.status === "loading") {
     return <SkeletonRows />;
   }
@@ -832,7 +1470,7 @@ function ResourceContent({ resource, type }) {
 
   if (type === "personnel-list") {
     const items = resource.data?.items ?? [];
-    return <RosterTable items={items} />;
+    return <RosterTable items={items} onOpen={onOpenPersonnel} />;
   }
 
   if (type === "application-list") {
@@ -848,7 +1486,7 @@ function ResourceContent({ resource, type }) {
   return <JsonPreview data={data} />;
 }
 
-function RosterTable({ items }) {
+function RosterTable({ items, onOpen }) {
   if (!items.length) {
     return (
       <EmptyState title="No personnel records" detail="The current scope returned no profiles." />
@@ -865,18 +1503,29 @@ function RosterTable({ items }) {
             <th>Unit</th>
             <th>Rank</th>
             <th>MOS</th>
-            <th>Standing</th>
+            <th>
+              <span className="visually-hidden">Open personnel profile</span>
+            </th>
           </tr>
         </thead>
         <tbody>
           {items.map((item) => (
             <tr key={item.id}>
               <td>{item.name}</td>
-              <td>{humanize(item.status)}</td>
-              <td>{item.currentUnit?.name ?? "Unassigned"}</td>
-              <td>{item.currentRank?.abbreviation ?? item.currentRank?.key ?? "-"}</td>
-              <td>{item.currentMOS?.identifier ?? item.currentMOS?.key ?? "-"}</td>
-              <td>{item.goodStanding ? "Good" : "Restricted"}</td>
+              <td>{personnelStatusLabel(item.status)}</td>
+              <td>{unitDisplayLabel(item.currentUnit)}</td>
+              <td>{rankDisplayLabel(item.currentRank, { compact: true })}</td>
+              <td>{formatRosterMos(item)}</td>
+              <td className="application-open-cell">
+                <button
+                  className="secondary-action compact-action"
+                  disabled={!onOpen}
+                  type="button"
+                  onClick={() => onOpen?.(item.id)}
+                >
+                  OPEN
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -885,12 +1534,20 @@ function RosterTable({ items }) {
   );
 }
 
+function formatRosterMos(item) {
+  const primary = item.currentMOS ? mosDisplayLabel(item.currentMOS) : "";
+  const secondary = item.currentSecondaryMOS ? mosDisplayLabel(item.currentSecondaryMOS) : "";
+  return [primary, secondary].filter(Boolean).join(" / ") || "-";
+}
+
 function ApplicationList({
+  currentAccountId = "",
   items,
   loading = false,
   error = null,
-  onSelect = null,
-  selectedId = null,
+  onClaim = null,
+  onOpen = null,
+  showClaimColumn = false,
 }) {
   if (loading) {
     return <SkeletonRows />;
@@ -905,21 +1562,68 @@ function ApplicationList({
   }
 
   return (
-    <div className="record-list">
-      {items.map((item) => (
-        <button
-          className={`record-row action${selectedId === item.id ? " selected" : ""}`}
-          key={item.id}
-          type="button"
-          onClick={() => onSelect?.(item.id)}
-        >
-          <div>
-            <strong>{applicationDisplayName(item)}</strong>
-            <span>{item.targetUnit?.name ?? "Unknown unit"}</span>
-          </div>
-          <span className="status-pill">{humanize(item.status)}</span>
-        </button>
-      ))}
+    <div className="table-wrap">
+      <table className="application-list-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Submitted date</th>
+            <th>Status</th>
+            {showClaimColumn ? (
+              <th>
+                <span className="visually-hidden">Claim application</span>
+              </th>
+            ) : null}
+            <th>
+              <span className="visually-hidden">Open application</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.id}>
+              <td>{applicationDisplayName(item)}</td>
+              <td>{formatDate(item.submittedAt)}</td>
+              <td>
+                <span className="status-pill">{applicationStatusLabel(item.status)}</span>
+              </td>
+              {showClaimColumn ? (
+                <td className="application-open-cell">
+                  {item.claimedByAccountId ? (
+                    <button
+                      className="secondary-action compact-action"
+                      disabled
+                      title={claimButtonTitle(item, currentAccountId)}
+                      type="button"
+                    >
+                      CLAIMED
+                    </button>
+                  ) : (
+                    <button
+                      className="secondary-action compact-action"
+                      disabled={!onClaim}
+                      type="button"
+                      onClick={() => onClaim?.(item.id)}
+                    >
+                      CLAIM
+                    </button>
+                  )}
+                </td>
+              ) : null}
+              <td className="application-open-cell">
+                <button
+                  className="secondary-action compact-action"
+                  disabled={!onOpen}
+                  type="button"
+                  onClick={() => onOpen?.(item.id)}
+                >
+                  OPEN
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -929,6 +1633,7 @@ function ApplicationForm({ form, options, setForm }) {
   const mosOptions = selectedUnits.size
     ? (options.mos ?? []).filter((mos) => selectedUnits.has(mos.unitId))
     : [];
+  const timeZones = options.timeZones ?? [];
 
   const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
   const togglePriorService = (value) =>
@@ -979,214 +1684,300 @@ function ApplicationForm({ form, options, setForm }) {
         itemIndex === index ? { ...unit, [field]: value } : unit,
       ),
     }));
+  const updateArmaPresent = (index, value) =>
+    setForm((current) => ({
+      ...current,
+      armaUnits: current.armaUnits.map((unit, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...unit,
+              stillMember: value,
+              leftAt: value ? "" : unit.leftAt,
+              reasonLeft: value ? "" : unit.reasonLeft,
+            }
+          : unit,
+      ),
+    }));
 
   return (
     <div className="application-form">
-      <div className="form-line name-line">
-        <fieldset className="name-question">
-          <legend>Enter the name you wish to use.</legend>
-          <div className="name-input-row">
+      <ApplicationReviewSection title="DETAILS">
+        <div className="application-section-row">
+          <Field label="FIRST NAME">
             <input
               aria-label="First name"
               placeholder="FIRST NAME"
               value={form.firstName}
               onChange={(event) => update("firstName", event.target.value)}
             />
+          </Field>
+          <Field label="LAST NAME">
             <input
               aria-label="Last name"
               placeholder="LAST NAME"
               value={form.lastName}
               onChange={(event) => update("lastName", event.target.value)}
             />
-          </div>
-        </fieldset>
-      </div>
-
-      <BooleanLine
-        checked={form.priorService}
-        label="ARE YOU CURRENT OR PRIOR SERVICE?"
-        onChange={togglePriorService}
-      />
-      {form.priorService ? (
-        <div className="conditional-detail">
-          <div className="repeatable-stack">
-            {form.servicePeriods.map((period, index) => (
-              <div className="inline-row" key={index}>
-                <select
-                  value={period.branch}
-                  onChange={(event) => updateServicePeriod(index, "branch", event.target.value)}
-                >
-                  <option value="">Branch</option>
-                  {(options.branches ?? []).map((branch) => (
-                    <option key={branch} value={branch}>
-                      {humanize(branch)}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  placeholder="MOS"
-                  value={period.mos}
-                  onChange={(event) => updateServicePeriod(index, "mos", event.target.value)}
-                />
-                <input
-                  max="99"
-                  min="0"
-                  placeholder="Years"
-                  type="number"
-                  value={period.years}
-                  onChange={(event) => updateServicePeriod(index, "years", event.target.value)}
-                />
-                <button
-                  className="secondary-action"
-                  type="button"
-                  onClick={() =>
-                    setForm((current) => ({
-                      ...current,
-                      servicePeriods: current.servicePeriods.filter(
-                        (_, itemIndex) => itemIndex !== index,
-                      ),
-                    }))
-                  }
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-          <button
-            className="secondary-action compact-action"
-            type="button"
-            onClick={() =>
-              setForm((current) => ({
-                ...current,
-                servicePeriods: [...current.servicePeriods, blankServicePeriod()],
-              }))
-            }
-          >
-            Add service period
-          </button>
-          {!form.servicePeriods.length ? (
-            <p className="muted-copy">Add at least one row before submitting.</p>
-          ) : null}
+          </Field>
         </div>
-      ) : null}
-
-      <BooleanLine
-        checked={form.priorArma}
-        label="ARE YOU CURRENTLY OR HAVE YOU EVER BEEN IN ANOTHER ARMA UNIT BEFORE JOINING TASK FORCE 20?"
-        onChange={togglePriorArma}
-      />
-      {form.priorArma ? (
-        <div className="conditional-detail">
-          <div className="repeatable-stack">
-            {form.armaUnits.map((unit, index) => (
-              <div className="inline-row arma-row" key={index}>
-                <input
-                  placeholder="Unit name"
-                  value={unit.unitName}
-                  onChange={(event) => updateArmaUnit(index, "unitName", event.target.value)}
-                />
-                <input
-                  type="date"
-                  value={unit.joinedAt}
-                  onChange={(event) => updateArmaUnit(index, "joinedAt", event.target.value)}
-                />
-                <input
-                  disabled={unit.stillMember}
-                  type="date"
-                  value={unit.leftAt}
-                  onChange={(event) => updateArmaUnit(index, "leftAt", event.target.value)}
-                />
-                <label className="checkbox-label">
-                  <input
-                    checked={unit.stillMember}
-                    type="checkbox"
-                    onChange={(event) => updateArmaUnit(index, "stillMember", event.target.checked)}
-                  />
-                  Still there
-                </label>
-                <input
-                  placeholder="Why you left"
-                  value={unit.reasonLeft}
-                  onChange={(event) => updateArmaUnit(index, "reasonLeft", event.target.value)}
-                />
-                <button
-                  className="secondary-action"
-                  type="button"
-                  onClick={() =>
-                    setForm((current) => ({
-                      ...current,
-                      armaUnits: current.armaUnits.filter((_, itemIndex) => itemIndex !== index),
-                    }))
-                  }
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-          <button
-            className="secondary-action compact-action"
-            type="button"
-            onClick={() =>
-              setForm((current) => ({
-                ...current,
-                armaUnits: [...current.armaUnits, blankArmaUnit()],
-              }))
-            }
-          >
-            Add Arma unit
-          </button>
-          {!form.armaUnits.length ? (
-            <p className="muted-copy">Add at least one row before submitting.</p>
-          ) : null}
+        <div className="application-section-row">
+          <Field label="HOW OLD ARE YOU?">
+            <input
+              min="1"
+              type="number"
+              value={form.age}
+              onChange={(event) => update("age", event.target.value)}
+            />
+          </Field>
+          <Field label="WHAT TIME ZONE ARE YOU IN?">
+            <select
+              value={form.timeZone}
+              onChange={(event) => update("timeZone", event.target.value)}
+            >
+              <option value="">CHOOSE ONE</option>
+              {timeZones.map((timeZone) => (
+                <option key={timeZone} value={timeZone}>
+                  {timeZone}
+                </option>
+              ))}
+            </select>
+          </Field>
         </div>
-      ) : null}
+        <div className="application-section-row single">
+          <Field label="WHY DO YOU WANT TO JOIN TASK FORCE 20?">
+            <textarea
+              value={form.reasonForJoining}
+              onChange={(event) => update("reasonForJoining", event.target.value)}
+            />
+          </Field>
+        </div>
+        <div className="application-section-row single">
+          <Field label="HOW DID YOU HEAR ABOUT US?">
+            <select value={form.source} onChange={(event) => update("source", event.target.value)}>
+              <option value="">CHOOSE ONE</option>
+              {(options.sources ?? []).map((source) => (
+                <option key={source} value={source}>
+                  {humanize(source)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      </ApplicationReviewSection>
 
-      <BooleanLine
-        checked={form.leadership}
-        label="DO YOU HAVE REAL WORLD OR ARMA LEADERSHIP EXPERIENCE?"
-        onChange={(value) => update("leadership", value)}
-      />
-      {form.leadership ? (
-        <Field label="Please describe your leadership experience">
-          <textarea
-            value={form.leadershipDetails}
-            onChange={(event) => update("leadershipDetails", event.target.value)}
+      <ApplicationReviewSection title="BACKGROUND">
+        <div className="application-section-line">
+          <BooleanLine
+            checked={form.priorService}
+            label="ARE YOU CURRENT OR PRIOR SERVICE?"
+            onChange={togglePriorService}
           />
-        </Field>
-      ) : null}
+          {form.priorService ? (
+            <div className="conditional-detail">
+              <div className="repeatable-stack">
+                {form.servicePeriods.map((period, index) => (
+                  <div className="inline-row" key={index}>
+                    <select
+                      value={period.branch}
+                      onChange={(event) => updateServicePeriod(index, "branch", event.target.value)}
+                    >
+                      <option value="">Branch</option>
+                      {(options.branches ?? []).map((branch) => (
+                        <option key={branch} value={branch}>
+                          {humanize(branch)}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      placeholder="MOS"
+                      value={period.mos}
+                      onChange={(event) => updateServicePeriod(index, "mos", event.target.value)}
+                    />
+                    <input
+                      max="99"
+                      min="0"
+                      placeholder="Years"
+                      type="number"
+                      value={period.years}
+                      onChange={(event) => updateServicePeriod(index, "years", event.target.value)}
+                    />
+                    <button
+                      className="secondary-action"
+                      type="button"
+                      onClick={() =>
+                        setForm((current) => ({
+                          ...current,
+                          servicePeriods: current.servicePeriods.filter(
+                            (_, itemIndex) => itemIndex !== index,
+                          ),
+                        }))
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                className="secondary-action compact-action"
+                type="button"
+                onClick={() =>
+                  setForm((current) => ({
+                    ...current,
+                    servicePeriods: [...current.servicePeriods, blankServicePeriod()],
+                  }))
+                }
+              >
+                Add service period
+              </button>
+              {!form.servicePeriods.length ? (
+                <p className="muted-copy">Add at least one row before submitting.</p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
 
-      <ChoiceList
-        emptyMessage="No recruiting-open 7000-level units are available."
-        getLabel={(unit) => unit.name}
-        items={options.units ?? []}
-        label="Which unit are you interested in joining?"
-        selectedIds={form.interestedUnitIds}
-        onToggle={toggleInterestedUnit}
-      />
-      <ChoiceList
-        emptyMessage={
-          selectedUnits.size
-            ? "No recruiting-open MOS choices are available for the selected unit."
-            : "Select an interested unit first."
-        }
-        getLabel={(mos) => `${mos.identifier ?? mos.key} - ${mos.name}`}
-        items={mosOptions}
-        label="Desired MOS"
-        selectedIds={form.desiredMOSIds}
-        onToggle={toggleDesiredMOS}
-      />
-      <Field label="HOW DID YOU HEAR ABOUT US?">
-        <select value={form.source} onChange={(event) => update("source", event.target.value)}>
-          <option value="">Select source</option>
-          {(options.sources ?? []).map((source) => (
-            <option key={source} value={source}>
-              {humanize(source)}
-            </option>
-          ))}
-        </select>
-      </Field>
+        <div className="application-section-line">
+          <BooleanLine
+            checked={form.priorArma}
+            label="ARE YOU CURRENTLY OR HAVE YOU EVER BEEN IN ANOTHER ARMA UNIT BEFORE JOINING TASK FORCE 20?"
+            onChange={togglePriorArma}
+          />
+          {form.priorArma ? (
+            <div className="conditional-detail">
+              <div className="repeatable-stack">
+                {form.armaUnits.map((unit, index) => (
+                  <div className="arma-record" key={index}>
+                    <div className="arma-record-row">
+                      <Field label="UNIT NAME">
+                        <input
+                          value={unit.unitName}
+                          onChange={(event) =>
+                            updateArmaUnit(index, "unitName", event.target.value)
+                          }
+                        />
+                      </Field>
+                      <Field label="FROM">
+                        <input
+                          aria-label="From month"
+                          type="month"
+                          value={unit.joinedAt}
+                          onChange={(event) =>
+                            updateArmaUnit(index, "joinedAt", event.target.value)
+                          }
+                        />
+                      </Field>
+                      {!unit.stillMember ? (
+                        <Field label="TO">
+                          <input
+                            aria-label="To month"
+                            type="month"
+                            value={unit.leftAt}
+                            onChange={(event) =>
+                              updateArmaUnit(index, "leftAt", event.target.value)
+                            }
+                          />
+                        </Field>
+                      ) : null}
+                      <label className="checkbox-label">
+                        <input
+                          checked={unit.stillMember}
+                          type="checkbox"
+                          onChange={(event) => updateArmaPresent(index, event.target.checked)}
+                        />
+                        Present
+                      </label>
+                      <button
+                        className="secondary-action"
+                        type="button"
+                        onClick={() =>
+                          setForm((current) => ({
+                            ...current,
+                            armaUnits: current.armaUnits.filter(
+                              (_, itemIndex) => itemIndex !== index,
+                            ),
+                          }))
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    {!unit.stillMember ? (
+                      <Field label="WHY DID YOU LEAVE?">
+                        <textarea
+                          className="arma-reason-textarea"
+                          value={unit.reasonLeft}
+                          onChange={(event) =>
+                            updateArmaUnit(index, "reasonLeft", event.target.value)
+                          }
+                        />
+                      </Field>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+              <button
+                className="secondary-action compact-action"
+                type="button"
+                onClick={() =>
+                  setForm((current) => ({
+                    ...current,
+                    armaUnits: [...current.armaUnits, blankArmaUnit()],
+                  }))
+                }
+              >
+                Add Arma unit
+              </button>
+              {!form.armaUnits.length ? (
+                <p className="muted-copy">Add at least one row before submitting.</p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="application-section-line">
+          <BooleanLine
+            checked={form.leadership}
+            label="DO YOU HAVE REAL WORLD OR ARMA LEADERSHIP EXPERIENCE?"
+            onChange={(value) => update("leadership", value)}
+          />
+          {form.leadership ? (
+            <Field label="Please describe your leadership experience">
+              <textarea
+                value={form.leadershipDetails}
+                onChange={(event) => update("leadershipDetails", event.target.value)}
+              />
+            </Field>
+          ) : null}
+        </div>
+      </ApplicationReviewSection>
+
+      <ApplicationReviewSection title="SELECTIONS">
+        <div className="application-section-row single">
+          <ChoiceList
+            emptyMessage="No recruiting-open 7000-level units are available."
+            getLabel={(unit) => unit.name}
+            items={options.units ?? []}
+            label="INTERESTED UNIT"
+            selectedIds={form.interestedUnitIds}
+            onToggle={toggleInterestedUnit}
+          />
+        </div>
+        <div className="application-section-row single">
+          <ChoiceList
+            emptyMessage={
+              selectedUnits.size
+                ? "No recruiting-open MOS choices are available for the selected unit."
+                : "Select an interested unit first."
+            }
+            getLabel={(mos) => mosDisplayLabel(mos)}
+            items={mosOptions}
+            label="INTERESTED MOS"
+            selectedIds={form.desiredMOSIds}
+            onToggle={toggleDesiredMOS}
+          />
+        </div>
+      </ApplicationReviewSection>
     </div>
   );
 }
@@ -1246,11 +2037,118 @@ function Field({ children, helper, label }) {
   );
 }
 
-function ReviewerApplicationDetail({
+function StaffApplicationDetail({
   actionState,
   application,
   detail,
   onAction,
+  onSaveNote,
+  setActionState,
+}) {
+  if (detail.status === "idle") {
+    return (
+      <EmptyState title="No application selected" detail="Choose an applicant from the queue." />
+    );
+  }
+  if (detail.status === "loading") {
+    return <SkeletonRows />;
+  }
+  if (detail.status === "error") {
+    return <EmptyState title="Application unavailable" detail={detail.error} />;
+  }
+
+  const updateAction = (field, value) =>
+    setActionState((current) => ({ ...current, [field]: value }));
+  const reviewable = ["RecruiterRecommended", "TargetUnitReview"].includes(application.status);
+
+  return (
+    <div className="detail-stack application-review-stack">
+      <ApplicationReviewSection title="APPLICATION STATUS">
+        <ApplicationStatusSummary application={application} showTargetUnit={false} />
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="APPLICATION DETAILS">
+        <ReadOnlyApplication application={application} />
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="UNIT REVIEW">
+        <div className="application-review-actions">
+          {!reviewable ? (
+            <p className="muted-copy">This application is not currently awaiting unit review.</p>
+          ) : null}
+          <div className="button-row">
+            <button
+              className="secondary-action"
+              disabled={!reviewable}
+              type="button"
+              onClick={() =>
+                onAction("Request info", `/applications/${application.id}/unit-request-info`, {
+                  reason: true,
+                })
+              }
+            >
+              Request info
+            </button>
+            <button
+              className="primary-action button-like"
+              disabled={!reviewable}
+              type="button"
+              onClick={() => onAction("Accept", `/applications/${application.id}/accept`)}
+            >
+              Accept
+            </button>
+            <button
+              className="danger-action"
+              disabled={!reviewable}
+              type="button"
+              onClick={() =>
+                onAction("Reject", `/applications/${application.id}/reject`, { reason: true })
+              }
+            >
+              Reject
+            </button>
+          </div>
+          <Field label="Action reason">
+            <textarea
+              disabled={!reviewable}
+              value={actionState.reason}
+              onChange={(event) => updateAction("reason", event.target.value)}
+            />
+          </Field>
+        </div>
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="STAFF NOTES">
+        <div className="application-review-actions">
+          <Field label="Notes">
+            <textarea
+              value={actionState.noteBody}
+              onChange={(event) => updateAction("noteBody", event.target.value)}
+            />
+          </Field>
+          <div className="button-row">
+            <button className="secondary-action" type="button" onClick={onSaveNote}>
+              Save note
+            </button>
+          </div>
+          <ApplicationNotesHistory
+            emptyDetail="No staff notes have been recorded yet."
+            items={application.notes ?? []}
+          />
+        </div>
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="STATUS HISTORY">
+        <Timeline items={application.statusHistory ?? []} showTitle={false} />
+      </ApplicationReviewSection>
+    </div>
+  );
+}
+
+function ReviewerApplicationDetail({
+  actionState,
+  application,
+  currentAccountId,
+  detail,
+  onAction,
+  onReleaseClaim,
+  onSaveNote,
   options,
   setActionState,
 }) {
@@ -1268,169 +2166,235 @@ function ReviewerApplicationDetail({
 
   const updateAction = (field, value) =>
     setActionState((current) => ({ ...current, [field]: value }));
+  const claimedByCurrentUser = isClaimedByCurrentUser(application, currentAccountId);
+  const hasClaim = Boolean(application?.claimedByAccountId);
+  const recruiterStage = ["Submitted", "RecruiterScreening", "MoreInfoRequested"].includes(
+    application.status,
+  );
+  const claimStatusMessage = hasClaim
+    ? claimedByCurrentUser
+      ? "You have claimed this application and can make recruiter changes."
+      : `Claimed by ${accountDisplayName(application.claimedByAccount)}. Recruiter controls are read-only.`
+    : "Claim this application from the applications list before making recruiter changes.";
 
   return (
-    <div className="detail-stack">
-      <ApplicationStatusSummary application={application} />
-      <ReadOnlyApplication application={application} />
-      <div className="action-panel">
-        <Field label="Action reason">
-          <textarea
-            value={actionState.reason}
-            onChange={(event) => updateAction("reason", event.target.value)}
-          />
-        </Field>
-        <Field label="Reviewer note">
-          <textarea
-            value={actionState.noteBody}
-            onChange={(event) => updateAction("noteBody", event.target.value)}
-          />
-        </Field>
-        <Field label="Target unit">
-          <select
-            value={actionState.targetUnitId}
-            onChange={(event) => updateAction("targetUnitId", event.target.value)}
-          >
-            <option value="">Select target unit</option>
-            {(options.units ?? []).map((unit) => (
-              <option key={unit.id} value={unit.id}>
-                {unit.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <div className="button-row">
-          <button
-            className="secondary-action"
-            type="button"
-            onClick={() => onAction("Request info", `/applications/${application.id}/request-info`)}
-          >
-            Request info
-          </button>
-          <button
-            className="secondary-action"
-            type="button"
-            onClick={() => onAction("Recommend", `/applications/${application.id}/recommend`)}
-          >
-            Recommend
-          </button>
-          <button
-            className="secondary-action"
-            type="button"
-            onClick={() =>
-              onAction("Assign unit", `/applications/${application.id}/assign-unit`, {
-                targetUnitId: actionState.targetUnitId,
-              })
-            }
-          >
-            Assign target unit
-          </button>
-          <button
-            className="primary-action button-like"
-            type="button"
-            onClick={() => onAction("Accept", `/applications/${application.id}/accept`)}
-          >
-            Accept
-          </button>
-          <button
-            className="danger-action"
-            type="button"
-            onClick={() => onAction("Reject", `/applications/${application.id}/reject`)}
-          >
-            Reject
-          </button>
+    <div className="detail-stack application-review-stack">
+      <ApplicationReviewSection title="APPLICATION STATUS">
+        <ApplicationStatusSummary application={application} />
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="APPLICATION DETAILS">
+        <ReadOnlyApplication application={application} />
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="RECRUITING">
+        <div className="application-review-actions">
+          <p className="muted-copy">{claimStatusMessage}</p>
+          <div className="button-row">
+            <button
+              className="secondary-action"
+              disabled={!claimedByCurrentUser}
+              type="button"
+              onClick={() =>
+                onAction(
+                  "Request info",
+                  `/applications/${application.id}/request-info`,
+                  {},
+                  { claimedByCurrentUser: true, reason: true },
+                )
+              }
+            >
+              Request info
+            </button>
+            <button
+              className="secondary-action"
+              disabled={!claimedByCurrentUser}
+              type="button"
+              onClick={() =>
+                onAction(
+                  "Recommend",
+                  `/applications/${application.id}/recommend`,
+                  {
+                    targetUnitId: actionState.targetUnitId,
+                  },
+                  { claimedByCurrentUser: true, targetUnit: true },
+                )
+              }
+            >
+              Recommend
+            </button>
+            <button
+              className="primary-action button-like"
+              type="button"
+              onClick={() => onAction("Accept", `/applications/${application.id}/accept`)}
+            >
+              Accept
+            </button>
+            <button
+              className="danger-action"
+              disabled={recruiterStage && !claimedByCurrentUser}
+              type="button"
+              onClick={() =>
+                onAction(
+                  "Reject",
+                  `/applications/${application.id}/reject`,
+                  {},
+                  {
+                    claimedByCurrentUser: recruiterStage,
+                    reason: true,
+                  },
+                )
+              }
+            >
+              Reject
+            </button>
+            {claimedByCurrentUser ? (
+              <button className="secondary-action" type="button" onClick={onReleaseClaim}>
+                Release application
+              </button>
+            ) : null}
+          </div>
+          <Field label="Target unit">
+            <select
+              disabled={!claimedByCurrentUser}
+              value={actionState.targetUnitId}
+              onChange={(event) => updateAction("targetUnitId", event.target.value)}
+            >
+              <option value="">Select target unit</option>
+              {(options.units ?? []).map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  {unit.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Action reason">
+            <textarea
+              disabled={!claimedByCurrentUser}
+              value={actionState.reason}
+              onChange={(event) => updateAction("reason", event.target.value)}
+            />
+          </Field>
         </div>
-      </div>
-      <Timeline items={application.statusHistory ?? []} />
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="RECRUITING NOTES">
+        <div className="application-review-actions">
+          <Field label="Notes">
+            <textarea
+              disabled={!claimedByCurrentUser}
+              value={actionState.noteBody}
+              onChange={(event) => updateAction("noteBody", event.target.value)}
+            />
+          </Field>
+          <div className="button-row">
+            <button
+              className="secondary-action"
+              disabled={!claimedByCurrentUser}
+              type="button"
+              onClick={onSaveNote}
+            >
+              Save note
+            </button>
+          </div>
+          <ApplicationNotesHistory items={application.notes ?? []} />
+        </div>
+      </ApplicationReviewSection>
+      <ApplicationReviewSection title="STATUS HISTORY">
+        <Timeline items={application.statusHistory ?? []} showTitle={false} />
+      </ApplicationReviewSection>
     </div>
   );
 }
 
-function ApplicationStatusSummary({ application }) {
+function ApplicationReviewSection({ children, title }) {
   return (
-    <KeyValueList
-      items={[
-        ["Applicant", applicationDisplayName(application)],
-        ["Status", humanize(application.status)],
-        ["Target unit", application.targetUnit?.name ?? "Not assigned"],
-        ["Submitted", formatDate(application.submittedAt)],
-      ]}
-    />
+    <section className="application-review-section">
+      <h4>{title}</h4>
+      {children}
+    </section>
   );
+}
+
+function ApplicationStatusSummary({ application, showTargetUnit = true }) {
+  const items = [
+    ["Status", applicationStatusLabel(application.status)],
+    ["Submitted", formatDate(application.submittedAt)],
+  ];
+  if (showTargetUnit) {
+    items.splice(1, 0, ["Target unit", application.targetUnit?.name ?? "Not assigned"]);
+  }
+
+  return <KeyValueList items={items} />;
 }
 
 function ReadOnlyApplication({ application }) {
+  const servicePeriods = (application.servicePeriods ?? []).map(formatServicePeriod);
+  const armaUnits = (application.armaUnits ?? []).map(formatArmaUnit);
+  const interestedUnits = (application.interestedUnits ?? []).map((entry) => entry.unit?.name);
+  const desiredMOS = (application.desiredMOS ?? []).map(formatDesiredMOS);
+  const serviceValue = application.priorService
+    ? inlineList(servicePeriods, "No service details recorded.")
+    : "No";
+  const armaValue = application.priorArma
+    ? inlineList(armaUnits, "No previous Arma details recorded.")
+    : "No";
+  const leadershipValue = application.leadership
+    ? application.leadershipDetails || "No leadership details recorded."
+    : "No";
+
   return (
-    <div className="detail-stack">
-      <KeyValueList
-        items={[
-          ["Name", [application.firstName, application.lastName].filter(Boolean).join(" ")],
-          ["Source", application.source ? humanize(application.source) : "Not recorded"],
-          ["Prior/current service", application.priorService ? "Yes" : "No"],
-          ["Prior Arma unit", application.priorArma ? "Yes" : "No"],
-          ["Leadership", application.leadership ? application.leadershipDetails || "Yes" : "No"],
-        ]}
-      />
-      <MiniList
-        empty="No interested units recorded."
-        items={(application.interestedUnits ?? []).map((entry) => entry.unit?.name)}
-        title="Interested Units"
-      />
-      <MiniList
-        empty="No desired MOS choices recorded."
-        items={(application.desiredMOS ?? []).map(
-          (entry) => `${entry.mos?.identifier ?? entry.mos?.key} - ${entry.mos?.name}`,
-        )}
-        title="Desired MOS"
-      />
-      <MiniList
-        empty="No service periods recorded."
-        items={(application.servicePeriods ?? []).map(
-          (period) => `${humanize(period.branch)} | ${period.mos} | ${period.years} years`,
-        )}
-        title="Service Periods"
-      />
-      <MiniList
-        empty="No prior Arma units recorded."
-        items={(application.armaUnits ?? []).map(
-          (unit) =>
-            `${unit.unitName} | ${formatDate(unit.joinedAt)} to ${unit.stillMember ? "Present" : formatDate(unit.leftAt)} | ${unit.reasonLeft ?? "No reason recorded"}`,
-        )}
-        title="Prior Arma Units"
-      />
+    <div className="readonly-application-form">
+      <ReadOnlyField label="Name">
+        {[application.firstName, application.lastName].filter(Boolean).join(" ") || "Not recorded"}
+      </ReadOnlyField>
+      <ReadOnlyField label="Age">
+        {application.age === null || application.age === undefined
+          ? "Not recorded"
+          : application.age}
+      </ReadOnlyField>
+      <ReadOnlyField label="Time Zone">{application.timeZone || "Not recorded"}</ReadOnlyField>
+      <ReadOnlyField label="Reason For Joining">
+        {application.reasonForJoining || "Not recorded"}
+      </ReadOnlyField>
+      <ReadOnlyField label="Current/Prior Service">{serviceValue}</ReadOnlyField>
+      <ReadOnlyField label="Previous Arma Experience">{armaValue}</ReadOnlyField>
+      <ReadOnlyField label="Leadership Experience">{leadershipValue}</ReadOnlyField>
+      <ReadOnlyField label="Unit Interest">
+        {inlineList(interestedUnits, "No interested units recorded.")}
+      </ReadOnlyField>
+      <ReadOnlyField label="Desired MOS">
+        {inlineList(desiredMOS, "No desired MOS choices recorded.")}
+      </ReadOnlyField>
+      <ReadOnlyField label="Source">
+        {application.source ? humanize(application.source) : "Not recorded"}
+      </ReadOnlyField>
     </div>
   );
 }
 
-function MiniList({ empty, items, title }) {
+function ReadOnlyField({ children, label }) {
+  return (
+    <div className="readonly-field">
+      <span>{label}</span>
+      <strong>{children}</strong>
+    </div>
+  );
+}
+
+function inlineList(items, empty) {
   const filtered = (items ?? []).filter(Boolean);
-  return (
-    <div className="mini-list">
-      <strong>{title}</strong>
-      {filtered.length ? (
-        <ul>
-          {filtered.map((item, index) => (
-            <li key={`${title}-${index}`}>{item}</li>
-          ))}
-        </ul>
-      ) : (
-        <span>{empty}</span>
-      )}
-    </div>
-  );
+  return filtered.length ? filtered.join("; ") : empty;
 }
 
-function Timeline({ items }) {
+function Timeline({ items, showTitle = true }) {
   if (!items?.length) {
     return <EmptyState title="No history" detail="No status history has been recorded yet." />;
   }
   return (
-    <div className="mini-list">
-      <strong>Status History</strong>
+    <div className={showTitle ? "mini-list" : "status-history-list"}>
+      {showTitle ? <strong>Status History</strong> : null}
       <ul>
         {items.map((item) => (
           <li key={item.id}>
-            {humanize(item.newStatus)} - {formatDate(item.createdAt)}
+            {applicationStatusLabel(item.newStatus)} - {formatDate(item.createdAt)}
             <br />
             <span>{item.reason}</span>
           </li>
@@ -1440,10 +2404,59 @@ function Timeline({ items }) {
   );
 }
 
+function ApplicationNotesHistory({
+  emptyDetail = "No recruiting notes have been recorded yet.",
+  items,
+}) {
+  if (!items?.length) {
+    return <EmptyState title="No notes" detail={emptyDetail} />;
+  }
+
+  return (
+    <div className="status-history-list">
+      <ul>
+        {items.map((item) => (
+          <li key={item.id}>
+            {humanize(item.stage ?? "Recruiting note")} - {formatDate(item.createdAt)}
+            <br />
+            <span>{item.body}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function formatServicePeriod(period) {
+  const years =
+    period.years === null || period.years === undefined || period.years === ""
+      ? null
+      : `${period.years} ${Number(period.years) === 1 ? "year" : "years"}`;
+  return [period.branch ? humanize(period.branch) : null, period.mos, years]
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function formatArmaUnit(unit) {
+  const dates = unit.joinedAt
+    ? `${formatMonthYear(unit.joinedAt)} to ${unit.stillMember ? "Present" : formatMonthYear(unit.leftAt)}`
+    : null;
+  return [unit.unitName, dates, unit.stillMember ? null : unit.reasonLeft || "No reason recorded"]
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function formatDesiredMOS(entry) {
+  return mosDisplayLabel(entry.mos, { empty: "" });
+}
+
 function blankApplicationForm() {
   return {
     firstName: "",
     lastName: "",
+    age: "",
+    timeZone: "",
+    reasonForJoining: "",
     source: "",
     priorService: false,
     servicePeriods: [],
@@ -1464,6 +2477,9 @@ function applicationToForm(application) {
   return {
     firstName: application.firstName ?? "",
     lastName: application.lastName ?? "",
+    age: application.age == null ? "" : String(application.age),
+    timeZone: application.timeZone ?? "",
+    reasonForJoining: application.reasonForJoining ?? "",
     source: application.source ?? "",
     priorService: Boolean(application.priorService),
     servicePeriods: (application.servicePeriods ?? []).map((period) => ({
@@ -1474,8 +2490,8 @@ function applicationToForm(application) {
     priorArma: Boolean(application.priorArma),
     armaUnits: (application.armaUnits ?? []).map((unit) => ({
       unitName: unit.unitName ?? "",
-      joinedAt: dateInputValue(unit.joinedAt),
-      leftAt: dateInputValue(unit.leftAt),
+      joinedAt: monthInputValue(unit.joinedAt),
+      leftAt: monthInputValue(unit.leftAt),
       stillMember: Boolean(unit.stillMember),
       reasonLeft: unit.reasonLeft ?? "",
     })),
@@ -1484,6 +2500,43 @@ function applicationToForm(application) {
     interestedUnitIds: (application.interestedUnits ?? []).map((entry) => entry.unitId),
     desiredMOSIds: (application.desiredMOS ?? []).map((entry) => entry.mosId),
   };
+}
+
+function blankPersonnelProfileForm() {
+  return {
+    name: "",
+    status: "",
+    currentUnitId: "",
+    currentRankId: "",
+    currentBilletId: "",
+    currentMOSId: "",
+    currentSecondaryMOSId: "",
+    goodStanding: "true",
+  };
+}
+
+function personnelProfileToForm(profile) {
+  if (!profile) {
+    return blankPersonnelProfileForm();
+  }
+
+  return {
+    name: profile.name ?? "",
+    status: profile.status ?? "",
+    currentUnitId: profile.currentUnitId ?? "",
+    currentRankId: profile.currentRankId ?? "",
+    currentBilletId: profile.currentBilletId ?? "",
+    currentMOSId: profile.currentMOSId ?? "",
+    currentSecondaryMOSId: profile.currentSecondaryMOSId ?? "",
+    goodStanding: String(profile.goodStanding ?? true),
+  };
+}
+
+function defaultStandingOptions() {
+  return [
+    { value: "true", label: "Good" },
+    { value: "false", label: "Restricted" },
+  ];
 }
 
 function blankServicePeriod() {
@@ -1509,6 +2562,31 @@ function applicationDisplayName(application) {
   return legalName || application?.account?.displayName || "Unnamed applicant";
 }
 
+function accountDisplayName(account) {
+  return (
+    account?.displayName ||
+    account?.authIdentities?.[0]?.displayName ||
+    account?.authIdentities?.[0]?.username ||
+    "another recruiter"
+  );
+}
+
+function isClaimedByCurrentUser(application, currentAccountId) {
+  return Boolean(
+    application?.claimedByAccountId &&
+    currentAccountId &&
+    application.claimedByAccountId === currentAccountId,
+  );
+}
+
+function claimButtonTitle(application, currentAccountId) {
+  if (isClaimedByCurrentUser(application, currentAccountId)) {
+    return "Claimed by you";
+  }
+
+  return `Claimed by ${accountDisplayName(application?.claimedByAccount)}`;
+}
+
 function formatDate(value) {
   if (!value) {
     return "Not recorded";
@@ -1526,7 +2604,23 @@ function formatDate(value) {
   }).format(date);
 }
 
-function dateInputValue(value) {
+function formatMonthYear(value) {
+  if (!value) {
+    return "Not recorded";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+function monthInputValue(value) {
   if (!value) {
     return "";
   }
@@ -1536,7 +2630,7 @@ function dateInputValue(value) {
     return "";
   }
 
-  return date.toISOString().slice(0, 10);
+  return date.toISOString().slice(0, 7);
 }
 
 function JsonPreview({ data }) {
@@ -1614,7 +2708,7 @@ function AuthScreen({ error }) {
         </div>
         <div>
           <span className="eyebrow">Task Force 20</span>
-          <h1>Protected Personnel System</h1>
+          <h1>Task Force 20 Integrated Personnel System</h1>
         </div>
         <p>{error}</p>
         <a className="primary-action" href="/auth/discord/start">
@@ -1642,10 +2736,7 @@ function initials(value) {
 }
 
 function humanize(value) {
-  return String(value ?? "Unknown")
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replaceAll("_", " ")
-    .trim();
+  return humanizeIdentifier(value);
 }
 
 function flattenPreview(data) {

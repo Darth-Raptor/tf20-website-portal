@@ -24,6 +24,7 @@ PAGES: PAGES WILL BE THE SECOND LAYER OF THE LEFT SIDE NAVAGATION BAR. CLICKING 
         EVENTS
         SUPPORT
         PERSONNEL MANAGEMENT
+        APPLICANT REVIEW
         APPLICATIONS
     PAGE KEYS:
         user_dashboard
@@ -35,6 +36,7 @@ PAGES: PAGES WILL BE THE SECOND LAYER OF THE LEFT SIDE NAVAGATION BAR. CLICKING 
         user_support
         staff_dashboard
         staff_personnelManagement
+        staff_applicantReview
         recruiting_dashbaord
         recruiting_applications
         training_dashboard

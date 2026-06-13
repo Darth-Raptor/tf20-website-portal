@@ -78,6 +78,15 @@ a {
   color: inherit;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
 .portal-shell {
   min-height: 100vh;
   display: grid;
@@ -494,6 +503,50 @@ a {
   min-height: auto;
 }
 
+.personnel-profile-card {
+  min-height: auto;
+  padding: 18px;
+  color: var(--palette-text);
+}
+
+.personnel-profile-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.personnel-profile-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.personnel-profile-heading .button-row {
+  margin-top: 0;
+}
+
+.personnel-profile-title {
+  margin: 0;
+  color: var(--palette-text);
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.profile-record-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--palette-text);
+}
+
+.profile-edit-message {
+  margin-top: 14px;
+}
+
 .panel-header {
   display: flex;
   align-items: center;
@@ -572,6 +625,15 @@ th {
   color: var(--palette-text);
   font-size: 12px;
   text-transform: uppercase;
+}
+
+.application-list-table th:last-child,
+.application-open-cell {
+  text-align: right;
+}
+
+.application-open-cell {
+  white-space: nowrap;
 }
 
 .record-list {
@@ -779,6 +841,15 @@ th {
   background: var(--danger);
 }
 
+.primary-action:disabled,
+.secondary-action:disabled,
+.danger-action:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .notice-panel {
   min-height: auto;
   border-color: var(--amber);
@@ -795,6 +866,12 @@ th {
   background: var(--palette-tile-background);
 }
 
+.application-detail-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 16px;
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;
@@ -808,6 +885,39 @@ th {
   gap: 18px;
 }
 
+.application-review-stack {
+  gap: 16px;
+}
+
+.application-review-section {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--palette-tile-background);
+}
+
+.application-review-section h4 {
+  margin: 0;
+  color: var(--palette-text);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 26px;
+  text-transform: uppercase;
+}
+
+.application-review-section .key-value-list div {
+  background: var(--palette-text-input-background);
+}
+
+.application-review-actions,
+.readonly-application-form {
+  display: grid;
+  gap: 14px;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -817,6 +927,22 @@ th {
 .form-line {
   display: grid;
   gap: 14px;
+}
+
+.application-section-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  min-width: 0;
+}
+
+.application-section-row.single {
+  grid-template-columns: 1fr;
+}
+
+.application-section-line {
+  display: grid;
+  gap: 10px;
 }
 
 .name-line {
@@ -872,6 +998,8 @@ th {
 .name-question input,
 .inline-row input,
 .inline-row select,
+.arma-record-row input,
+.arma-record textarea,
 .section-row select {
   width: 100%;
   min-height: 42px;
@@ -933,6 +1061,27 @@ th {
   accent-color: var(--amber);
 }
 
+.readonly-field {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--palette-text-input-background);
+  color: var(--palette-text);
+}
+
+.readonly-field span {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.readonly-field strong {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
 .conditional-detail {
   display: grid;
   gap: 10px;
@@ -984,6 +1133,23 @@ th {
   grid-template-columns:
     minmax(150px, 1fr) minmax(130px, 0.7fr) minmax(130px, 0.7fr)
     auto minmax(160px, 1fr) auto;
+}
+
+.arma-record {
+  display: grid;
+  gap: 8px;
+}
+
+.arma-record-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(130px, 0.7fr) minmax(130px, 0.7fr) auto auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.arma-reason-textarea {
+  min-height: 96px;
+  resize: vertical;
 }
 
 .checkbox-label {
@@ -1067,6 +1233,18 @@ th {
   color: var(--palette-text);
 }
 
+.status-history-list ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.status-history-list li,
+.status-history-list span {
+  color: var(--palette-text);
+}
+
 @keyframes shimmer {
   100% {
     transform: translateX(100%);
@@ -1109,8 +1287,13 @@ th {
     grid-template-columns: 1fr;
   }
 
+  .application-section-row {
+    grid-template-columns: 1fr;
+  }
+
   .inline-row,
-  .inline-row.arma-row {
+  .inline-row.arma-row,
+  .arma-record-row {
     grid-template-columns: 1fr;
   }
 }

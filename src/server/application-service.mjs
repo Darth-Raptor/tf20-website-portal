@@ -1,6 +1,7 @@
-const APPLICATION_FORM_VERSION = "enlistment-v2";
+const APPLICATION_FORM_VERSION = "enlistment-v3";
 const RECRUITING_SOURCES = ["Reddit", "Steam", "Discord"];
 const MILITARY_BRANCHES = ["Army", "Navy", "AirForce", "Marines", "CoastGuard"];
+const APPLICATION_TIME_ZONES = ["UTC", "EST", "CST", "MST", "PST", "GMT", "CET", "AEST"];
 const ACTIVE_APPLICATION_STATUSES = [
   "Draft",
   "Submitted",
@@ -18,6 +19,8 @@ const REVIEW_QUEUE_RECRUITER_STATUSES = [
   "TargetUnitReview",
 ];
 const REVIEW_QUEUE_TARGET_STATUSES = ["RecruiterRecommended", "TargetUnitReview"];
+const CLAIMABLE_APPLICATION_STATUSES = REVIEW_QUEUE_RECRUITER_STATUSES;
+const TERMINAL_APPLICATION_STATUSES = ["Accepted", "Converted", "Denied", "Withdrawn", "Closed"];
 
 function hasPermission(account, permissionKey) {
   return (account.roleAssignments ?? []).some(
@@ -41,6 +44,12 @@ function normalizeText(value) {
   return "";
 }
 
+function normalizeAge(value) {
+  const text = normalizeText(value);
+  if (!text) return null;
+  return /^\d+$/.test(text) ? Number.parseInt(text, 10) : Number.NaN;
+}
+
 export function canCreateOwnApplication(account) {
   return account.status === "Pending" && hasPermission(account, "applications.create-self");
 }
@@ -57,10 +66,29 @@ export function canTargetUnitReview(account) {
   return hasPermission(account, "applications.review-target-unit");
 }
 
-export function canReviewApplicationRecord(account, application) {
+export async function canReviewApplicationRecord(prisma, account, application) {
   if (canRecruiterReview(account) && application.status !== "Draft") return true;
   if (!canTargetUnitReview(account) || !application.targetUnitId) return false;
-  return isUnitInActorScope(account, application.targetUnitId) || hasGlobalReviewOverride(account);
+  return isUnitInActorScope(prisma, account, application.targetUnitId);
+}
+
+function isClaimedByActor(application, actor) {
+  return Boolean(application.claimedByAccountId && application.claimedByAccountId === actor.id);
+}
+
+function requireRecruiterClaim(application, actor) {
+  if (isClaimedByActor(application, actor)) {
+    return { ok: true };
+  }
+
+  if (application.claimedByAccountId) {
+    return failure(
+      "permission_denied",
+      "This application is claimed by another recruiter and is read-only.",
+    );
+  }
+
+  return failure("claim_required", "Claim this application before making recruiter changes.");
 }
 
 export async function getApplicationUnits(prisma) {
@@ -96,6 +124,7 @@ export async function getRecruitingOptions(prisma, selectedUnitIds = []) {
   return {
     sources: RECRUITING_SOURCES,
     branches: MILITARY_BRANCHES,
+    timeZones: APPLICATION_TIME_ZONES,
     units,
     mos,
   };
@@ -121,7 +150,8 @@ export async function listReviewQueue(prisma, account) {
   const targetUnitReviewer = canTargetUnitReview(account);
   if (!recruiter && !targetUnitReviewer) return [];
 
-  const scopedUnitIds = recruiter ? [] : activeUnitScopeIds(account);
+  const scope = recruiter ? null : await resolveApplicationUnitScope(prisma, account);
+  const scopedUnitIds = scope?.ok ? scope.unitIds : [];
   const where =
     recruiter && targetUnitReviewer
       ? {
@@ -134,11 +164,33 @@ export async function listReviewQueue(prisma, account) {
         ? { status: { in: REVIEW_QUEUE_RECRUITER_STATUSES } }
         : {
             status: { in: REVIEW_QUEUE_TARGET_STATUSES },
-            targetUnitId: { in: scopedUnitIds.length ? scopedUnitIds : [""] },
+            targetUnitId:
+              scopedUnitIds === null
+                ? { not: null }
+                : { in: scopedUnitIds.length ? scopedUnitIds : [""] },
           };
 
   return prisma.application.findMany({
     where,
+    orderBy: [{ submittedAt: "asc" }, { createdAt: "asc" }],
+    include: applicationInclude(),
+  });
+}
+
+export async function listUnitReviewQueue(prisma, account) {
+  if (!canTargetUnitReview(account)) return [];
+
+  const scope = await resolveApplicationUnitScope(prisma, account);
+  if (!scope.ok) return [];
+
+  return prisma.application.findMany({
+    where: {
+      status: { in: REVIEW_QUEUE_TARGET_STATUSES },
+      targetUnitId:
+        scope.unitIds === null
+          ? { not: null }
+          : { in: scope.unitIds.length ? scope.unitIds : [""] },
+    },
     orderBy: [{ submittedAt: "asc" }, { createdAt: "asc" }],
     include: applicationInclude(),
   });
@@ -242,12 +294,18 @@ export async function submitOwnApplication({ prisma, account, body }) {
   if (!validation.ok) return validation;
 
   const now = new Date();
+  const returnsToUnitReview =
+    application.status === "MoreInfoRequested" &&
+    latestInformationRequestStage(application) === "TargetUnitReview" &&
+    Boolean(application.targetUnitId);
+  const nextStatus = returnsToUnitReview ? "TargetUnitReview" : "Submitted";
+  const nextStage = returnsToUnitReview ? "TargetUnitReview" : "RecruiterScreening";
   const result = await prisma.$transaction(async (tx) => {
     await persistApplicationData(tx, application.id, data);
     const updated = await tx.application.update({
       where: { id: application.id },
       data: {
-        status: "Submitted",
+        status: nextStatus,
         submittedAt: now,
       },
       include: applicationInclude(),
@@ -257,13 +315,15 @@ export async function submitOwnApplication({ prisma, account, body }) {
       data: {
         applicationId: application.id,
         oldStatus: application.status,
-        newStatus: "Submitted",
-        stage: "RecruiterScreening",
+        newStatus: nextStatus,
+        stage: nextStage,
         changedByAccountId: account.id,
         reason:
-          application.status === "MoreInfoRequested"
-            ? "Applicant resubmitted requested enlistment application information."
-            : "Pending user submitted enlistment application.",
+          application.status === "MoreInfoRequested" && returnsToUnitReview
+            ? "Applicant resubmitted requested target-unit review information."
+            : application.status === "MoreInfoRequested"
+              ? "Applicant resubmitted requested enlistment application information."
+              : "Pending user submitted enlistment application.",
         permissionContext: {
           actorAccountId: account.id,
           actorStatus: account.status,
@@ -281,7 +341,7 @@ export async function submitOwnApplication({ prisma, account, body }) {
         recordId: application.id,
         oldValue: { status: application.status },
         newValue: {
-          status: "Submitted",
+          status: nextStatus,
           interestedUnitIds: data.interestedUnitIds,
           desiredMOSIds: data.desiredMOSIds,
         },
@@ -298,7 +358,9 @@ export async function submitOwnApplication({ prisma, account, body }) {
             ? "application-resubmitted"
             : "application-submitted",
         title: "Application submitted",
-        body: "Your enlistment application was submitted and is awaiting recruiter screening.",
+        body: returnsToUnitReview
+          ? "Your enlistment application was submitted and returned to your target unit for review."
+          : "Your enlistment application was submitted and is awaiting recruiter screening.",
         relatedRecordType: "Application",
         relatedRecordId: application.id,
       },
@@ -367,7 +429,7 @@ export async function withdrawOwnApplication({ prisma, account, reason }) {
   return { ok: true, application: result };
 }
 
-export async function requestApplicationInfo({ prisma, actor, applicationId, reason, noteBody }) {
+export async function requestApplicationInfo({ prisma, actor, applicationId, reason }) {
   if (!canRecruiterReview(actor)) {
     return failure("permission_denied", "Recruiter review permission is required.");
   }
@@ -383,6 +445,8 @@ export async function requestApplicationInfo({ prisma, actor, applicationId, rea
   if (!REVIEW_QUEUE_RECRUITER_STATUSES.includes(application.status)) {
     return failure("invalid_transition", "More information cannot be requested from this status.");
   }
+  const claim = requireRecruiterClaim(application, actor);
+  if (!claim.ok) return claim;
 
   const result = await prisma.$transaction(async (tx) => {
     const updated = await tx.application.update({
@@ -400,16 +464,6 @@ export async function requestApplicationInfo({ prisma, actor, applicationId, rea
         changedByAccountId: actor.id,
         reason,
         permissionContext: { actorAccountId: actor.id, action: "request-info" },
-      },
-    });
-
-    await tx.applicationReviewNote.create({
-      data: {
-        applicationId,
-        authorAccountId: actor.id,
-        stage: "RecruiterScreening",
-        body: noteBody || reason,
-        visibility: "Applicant",
       },
     });
 
@@ -445,6 +499,251 @@ export async function requestApplicationInfo({ prisma, actor, applicationId, rea
   return { ok: true, application: result };
 }
 
+export async function requestApplicationInfoFromUnit({ prisma, actor, applicationId, reason }) {
+  const actionReason = normalizeText(reason);
+  if (!actionReason) {
+    return failure("validation_error", "Request-info reason is required.");
+  }
+
+  const application = await prisma.application.findUnique({
+    where: { id: applicationId },
+    include: applicationInclude(),
+  });
+  if (!application) {
+    return failure("not_found", "Application was not found.");
+  }
+
+  const authority = await requireTargetUnitReviewAuthority({ prisma, actor, application });
+  if (!authority.ok) return authority;
+
+  if (!REVIEW_QUEUE_TARGET_STATUSES.includes(application.status)) {
+    return failure("invalid_transition", "More information cannot be requested from this status.");
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const updated = await tx.application.update({
+      where: { id: applicationId },
+      data: { status: "MoreInfoRequested" },
+      include: applicationInclude(),
+    });
+
+    await tx.applicationStatusHistory.create({
+      data: {
+        applicationId,
+        oldStatus: application.status,
+        newStatus: "MoreInfoRequested",
+        stage: "TargetUnitReview",
+        changedByAccountId: actor.id,
+        reason: actionReason,
+        permissionContext: {
+          actorAccountId: actor.id,
+          action: "unit-request-info",
+          targetUnitId: application.targetUnitId,
+        },
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        actorAccountId: actor.id,
+        targetAccountId: application.accountId,
+        module: "applications",
+        action: "unit-request-info",
+        recordType: "Application",
+        recordId: applicationId,
+        oldValue: { status: application.status },
+        newValue: { status: "MoreInfoRequested" },
+        reason: actionReason,
+      },
+    });
+
+    await tx.notification.create({
+      data: {
+        accountId: application.accountId,
+        category: "applications",
+        workflowEvent: "application-unit-more-info-requested",
+        title: "Application update requested",
+        body: "Unit staff requested more information on your enlistment application.",
+        relatedRecordType: "Application",
+        relatedRecordId: applicationId,
+      },
+    });
+
+    return updated;
+  });
+
+  return { ok: true, application: result };
+}
+
+export async function claimApplication({ prisma, actor, applicationId }) {
+  if (!canRecruiterReview(actor)) {
+    return failure("permission_denied", "Recruiter review permission is required.");
+  }
+
+  const application = await prisma.application.findUnique({
+    where: { id: applicationId },
+    include: applicationInclude(),
+  });
+  if (!application) {
+    return failure("not_found", "Application was not found.");
+  }
+  if (!CLAIMABLE_APPLICATION_STATUSES.includes(application.status)) {
+    return failure("invalid_transition", "This application cannot be claimed from its status.");
+  }
+  if (application.claimedByAccountId) {
+    return failure("already_claimed", "This application has already been claimed.");
+  }
+
+  const now = new Date();
+  const result = await prisma.$transaction(async (tx) => {
+    const claimed = await tx.application.updateMany({
+      where: {
+        id: applicationId,
+        status: { in: CLAIMABLE_APPLICATION_STATUSES },
+        claimedByAccountId: null,
+      },
+      data: {
+        claimedByAccountId: actor.id,
+        claimedAt: now,
+      },
+    });
+
+    if (claimed.count !== 1) {
+      return null;
+    }
+
+    return tx.application.findUniqueOrThrow({
+      where: { id: applicationId },
+      include: applicationInclude(),
+    });
+  });
+
+  if (!result) {
+    return failure("already_claimed", "This application has already been claimed.");
+  }
+
+  return { ok: true, application: result };
+}
+
+export async function releaseApplicationClaim({ prisma, actor, applicationId }) {
+  if (!canRecruiterReview(actor)) {
+    return failure("permission_denied", "Recruiter review permission is required.");
+  }
+
+  const application = await prisma.application.findUnique({
+    where: { id: applicationId },
+    include: applicationInclude(),
+  });
+  if (!application) {
+    return failure("not_found", "Application was not found.");
+  }
+  if (TERMINAL_APPLICATION_STATUSES.includes(application.status)) {
+    return failure("invalid_transition", "This application claim can no longer be released.");
+  }
+  if (!application.claimedByAccountId) {
+    return failure("invalid_transition", "This application is not claimed.");
+  }
+  if (!isClaimedByActor(application, actor)) {
+    return failure(
+      "permission_denied",
+      "Only the claiming recruiter can release this application.",
+    );
+  }
+
+  const result = await prisma.application.update({
+    where: { id: applicationId },
+    data: {
+      claimedByAccountId: null,
+      claimedAt: null,
+    },
+    include: applicationInclude(),
+  });
+
+  return { ok: true, application: result };
+}
+
+export async function saveApplicationReviewNote({ prisma, actor, applicationId, body }) {
+  if (!canRecruiterReview(actor)) {
+    return failure("permission_denied", "Recruiter review permission is required.");
+  }
+
+  const noteBody = normalizeText(body);
+  if (!noteBody) {
+    return failure("validation_error", "Recruiting note is required.");
+  }
+
+  const application = await prisma.application.findUnique({
+    where: { id: applicationId },
+    include: applicationInclude(),
+  });
+  if (!application) {
+    return failure("not_found", "Application was not found.");
+  }
+
+  const claim = requireRecruiterClaim(application, actor);
+  if (!claim.ok) return claim;
+
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.applicationReviewNote.create({
+      data: {
+        applicationId,
+        authorAccountId: actor.id,
+        stage: "RecruiterScreening",
+        body: noteBody,
+        visibility: "Staff",
+      },
+    });
+
+    return tx.application.findUniqueOrThrow({
+      where: { id: applicationId },
+      include: applicationInclude(),
+    });
+  });
+
+  return { ok: true, application: result };
+}
+
+export async function saveApplicationUnitReviewNote({ prisma, actor, applicationId, body }) {
+  const noteBody = normalizeText(body);
+  if (!noteBody) {
+    return failure("validation_error", "Staff note is required.");
+  }
+
+  const application = await prisma.application.findUnique({
+    where: { id: applicationId },
+    include: applicationInclude(),
+  });
+  if (!application) {
+    return failure("not_found", "Application was not found.");
+  }
+
+  const authority = await requireTargetUnitReviewAuthority({ prisma, actor, application });
+  if (!authority.ok) return authority;
+
+  if (![...REVIEW_QUEUE_TARGET_STATUSES, "MoreInfoRequested"].includes(application.status)) {
+    return failure("invalid_transition", "This application is not in unit review.");
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.applicationReviewNote.create({
+      data: {
+        applicationId,
+        authorAccountId: actor.id,
+        stage: "TargetUnitReview",
+        body: noteBody,
+        visibility: "Staff",
+      },
+    });
+
+    return tx.application.findUniqueOrThrow({
+      where: { id: applicationId },
+      include: applicationInclude(),
+    });
+  });
+
+  return { ok: true, application: result };
+}
+
 export async function createOrResumeOwnApplication({ prisma, account, body }) {
   const normalized = normalizeLegacyApplicationBody(body);
   if (!normalized.desiredMOSIds.length && normalized.interestedUnitIds.length) {
@@ -465,10 +764,17 @@ export async function createOrResumeOwnApplication({ prisma, account, body }) {
   return submitOwnApplication({ prisma, account, body: normalized });
 }
 
-export async function recommendApplication({ prisma, actor, applicationId, reason, noteBody }) {
+export async function recommendApplication({ prisma, actor, applicationId, reason, targetUnitId }) {
   if (!canRecruiterReview(actor)) {
     return failure("permission_denied", "Recruiter review permission is required.");
   }
+
+  const normalizedTargetUnitId = normalizeText(targetUnitId);
+  const actionReason =
+    normalizeText(reason) ||
+    (normalizedTargetUnitId
+      ? "Recruiter recommended applicant to target unit."
+      : "Recruiter recommended applicant.");
 
   const application = await prisma.application.findUnique({
     where: { id: applicationId },
@@ -478,16 +784,36 @@ export async function recommendApplication({ prisma, actor, applicationId, reaso
   if (!application) {
     return failure("not_found", "Application was not found.");
   }
+  const claim = requireRecruiterClaim(application, actor);
+  if (!claim.ok) return claim;
 
-  if (!["Submitted", "RecruiterScreening"].includes(application.status)) {
+  const reviewableStatuses = normalizedTargetUnitId
+    ? ["Submitted", "RecruiterScreening", "RecruiterRecommended", "TargetUnitReview"]
+    : ["Submitted", "RecruiterScreening"];
+  if (!reviewableStatuses.includes(application.status)) {
     return failure("invalid_transition", "Application is not in recruiter screening.");
   }
+
+  let targetUnit = null;
+  if (normalizedTargetUnitId) {
+    targetUnit = await prisma.unit.findFirst({
+      where: { id: normalizedTargetUnitId, status: "Active", recruitingOpen: true },
+      select: { id: true },
+    });
+    if (!targetUnit) {
+      return failure("validation_error", "Selected target unit is invalid.");
+    }
+  }
+
+  const nextStatus = targetUnit ? "TargetUnitReview" : "RecruiterRecommended";
+  const nextStage = targetUnit ? "TargetUnitReview" : "RecruiterScreening";
 
   const result = await prisma.$transaction(async (tx) => {
     const updated = await tx.application.update({
       where: { id: applicationId },
       data: {
-        status: "RecruiterRecommended",
+        status: nextStatus,
+        ...(targetUnit ? { targetUnitId: targetUnit.id } : {}),
         recruiterRecommendedByAccountId: actor.id,
         recruiterRecommendedAt: new Date(),
       },
@@ -498,28 +824,17 @@ export async function recommendApplication({ prisma, actor, applicationId, reaso
       data: {
         applicationId,
         oldStatus: application.status,
-        newStatus: "RecruiterRecommended",
-        stage: "RecruiterScreening",
+        newStatus: nextStatus,
+        stage: nextStage,
         changedByAccountId: actor.id,
-        reason,
+        reason: actionReason,
         permissionContext: {
           actorAccountId: actor.id,
           action: "recommend",
+          ...(targetUnit ? { targetUnitId: targetUnit.id } : {}),
         },
       },
     });
-
-    if (noteBody) {
-      await tx.applicationReviewNote.create({
-        data: {
-          applicationId,
-          authorAccountId: actor.id,
-          stage: "RecruiterScreening",
-          body: noteBody,
-          visibility: "Staff",
-        },
-      });
-    }
 
     await tx.auditLog.create({
       data: {
@@ -529,9 +844,9 @@ export async function recommendApplication({ prisma, actor, applicationId, reaso
         action: "recommend",
         recordType: "Application",
         recordId: applicationId,
-        oldValue: { status: application.status },
-        newValue: { status: "RecruiterRecommended" },
-        reason,
+        oldValue: { status: application.status, targetUnitId: application.targetUnitId },
+        newValue: { status: nextStatus, targetUnitId: targetUnit?.id ?? application.targetUnitId },
+        reason: actionReason,
       },
     });
 
@@ -539,9 +854,11 @@ export async function recommendApplication({ prisma, actor, applicationId, reaso
       data: {
         accountId: application.accountId,
         category: "applications",
-        workflowEvent: "recruiter-recommended",
-        title: "Application advanced",
-        body: "Your application passed recruiter screening and is ready for target-unit assignment.",
+        workflowEvent: targetUnit ? "application-target-unit-updated" : "recruiter-recommended",
+        title: targetUnit ? "Application sent to target unit" : "Application advanced",
+        body: targetUnit
+          ? "Your application passed recruiter screening and was sent to the selected target unit for review."
+          : "Your application passed recruiter screening and is ready for target-unit assignment.",
         relatedRecordType: "Application",
         relatedRecordId: applicationId,
       },
@@ -591,10 +908,22 @@ export async function assignApplicationUnit({
   if (
     canTargetUnitReview(actor) &&
     !canRecruiterReview(actor) &&
-    !isUnitInActorScope(actor, targetUnitId)
+    !(await isUnitInActorScope(prisma, actor, targetUnitId))
   ) {
     return failure("permission_denied", "Target-unit scope does not include the requested unit.");
   }
+
+  const hasTargetAuthorityForUnit =
+    canTargetUnitReview(actor) && (await isUnitInActorScope(prisma, actor, targetUnitId));
+  const recruiterStageAssignment =
+    ["Submitted", "RecruiterScreening"].includes(application.status) ||
+    (application.status === "RecruiterRecommended" && !hasTargetAuthorityForUnit);
+  if (canRecruiterReview(actor) && recruiterStageAssignment) {
+    const claim = requireRecruiterClaim(application, actor);
+    if (!claim.ok) return claim;
+  }
+
+  const actionReason = normalizeText(reason) || "Application target unit assigned.";
 
   const result = await prisma.$transaction(async (tx) => {
     const updated = await tx.application.update({
@@ -613,7 +942,7 @@ export async function assignApplicationUnit({
         newStatus: "TargetUnitReview",
         stage: "TargetUnitReview",
         changedByAccountId: actor.id,
-        reason,
+        reason: actionReason,
         permissionContext: {
           actorAccountId: actor.id,
           action: "assign-unit",
@@ -632,7 +961,7 @@ export async function assignApplicationUnit({
         recordId: applicationId,
         oldValue: { targetUnitId: application.targetUnitId, status: application.status },
         newValue: { targetUnitId, status: "TargetUnitReview" },
-        reason,
+        reason: actionReason,
       },
     });
 
@@ -654,11 +983,7 @@ export async function assignApplicationUnit({
   return { ok: true, application: result };
 }
 
-export async function acceptApplication({ prisma, actor, applicationId, reason, noteBody }) {
-  if (!canTargetUnitReview(actor)) {
-    return failure("permission_denied", "Target-unit review permission is required.");
-  }
-
+export async function acceptApplication({ prisma, actor, applicationId, reason }) {
   const application = await prisma.application.findUnique({
     where: { id: applicationId },
     include: applicationInclude(),
@@ -675,12 +1000,8 @@ export async function acceptApplication({ prisma, actor, applicationId, reason, 
     return failure("invalid_transition", "Application is not ready for acceptance.");
   }
 
-  if (!isUnitInActorScope(actor, application.targetUnitId) && !hasGlobalReviewOverride(actor)) {
-    return failure(
-      "permission_denied",
-      "Reviewer does not have target-unit authority for this application.",
-    );
-  }
+  const authority = await requireTargetUnitReviewAuthority({ prisma, actor, application });
+  if (!authority.ok) return authority;
 
   if (application.account.status !== "Pending") {
     return failure("invalid_transition", "Only pending accounts can be accepted.");
@@ -695,6 +1016,7 @@ export async function acceptApplication({ prisma, actor, applicationId, reason, 
     return failure("configuration_error", "Member role is missing from the seeded catalog.");
   }
 
+  const actionReason = normalizeText(reason) || "Application accepted.";
   const preferredName = buildAcceptedProfileName(application);
   const now = new Date();
   const result = await prisma.$transaction(async (tx) => {
@@ -715,7 +1037,7 @@ export async function acceptApplication({ prisma, actor, applicationId, reason, 
         newStatus: "Accepted",
         stage: "FinalDecision",
         changedByAccountId: actor.id,
-        reason,
+        reason: actionReason,
         permissionContext: {
           actorAccountId: actor.id,
           action: "accept",
@@ -800,18 +1122,6 @@ export async function acceptApplication({ prisma, actor, applicationId, reason, 
       });
     }
 
-    if (noteBody) {
-      await tx.applicationReviewNote.create({
-        data: {
-          applicationId,
-          authorAccountId: actor.id,
-          stage: "FinalDecision",
-          body: noteBody,
-          visibility: "Staff",
-        },
-      });
-    }
-
     const converted = await tx.application.update({
       where: { id: applicationId },
       data: {
@@ -859,7 +1169,7 @@ export async function acceptApplication({ prisma, actor, applicationId, reason, 
           source: application.source,
           militaryService: application.priorService,
         },
-        reason,
+        reason: actionReason,
       },
     });
 
@@ -881,7 +1191,7 @@ export async function acceptApplication({ prisma, actor, applicationId, reason, 
   return { ok: true, application: result };
 }
 
-export async function rejectApplication({ prisma, actor, applicationId, reason, noteBody }) {
+export async function rejectApplication({ prisma, actor, applicationId, reason }) {
   const application = await prisma.application.findUnique({
     where: { id: applicationId },
     include: applicationInclude(),
@@ -900,20 +1210,14 @@ export async function rejectApplication({ prisma, actor, applicationId, reason, 
   if (isRecruiterStage && !canRecruiterReview(actor)) {
     return failure("permission_denied", "Recruiter review permission is required.");
   }
+  if (isRecruiterStage) {
+    const claim = requireRecruiterClaim(application, actor);
+    if (!claim.ok) return claim;
+  }
 
   if (isTargetUnitStage) {
-    if (!canTargetUnitReview(actor)) {
-      return failure("permission_denied", "Target-unit review permission is required.");
-    }
-    if (
-      !application.targetUnitId ||
-      (!isUnitInActorScope(actor, application.targetUnitId) && !hasGlobalReviewOverride(actor))
-    ) {
-      return failure(
-        "permission_denied",
-        "Reviewer does not have target-unit authority for this application.",
-      );
-    }
+    const authority = await requireTargetUnitReviewAuthority({ prisma, actor, application });
+    if (!authority.ok) return authority;
   }
 
   if (!isRecruiterStage && !isTargetUnitStage) {
@@ -949,18 +1253,6 @@ export async function rejectApplication({ prisma, actor, applicationId, reason, 
         },
       },
     });
-
-    if (noteBody) {
-      await tx.applicationReviewNote.create({
-        data: {
-          applicationId,
-          authorAccountId: actor.id,
-          stage,
-          body: noteBody,
-          visibility: "Staff",
-        },
-      });
-    }
 
     await tx.auditLog.create({
       data: {
@@ -1019,6 +1311,9 @@ function normalizeApplicationData(body = {}) {
   return {
     firstName,
     lastName,
+    age: normalizeAge(body.age),
+    timeZone: normalizeText(body.timeZone),
+    reasonForJoining: normalizeText(body.reasonForJoining),
     source: normalizeText(body.source),
     priorService,
     servicePeriods: priorService ? normalizeServicePeriods(body) : [],
@@ -1037,6 +1332,9 @@ function normalizeLegacyApplicationBody(body = {}) {
     ...body,
     firstName: normalizeText(body.firstName) || names.firstName,
     lastName: normalizeText(body.lastName) || names.lastName,
+    age: normalizeText(body.age),
+    timeZone: normalizeText(body.timeZone),
+    reasonForJoining: normalizeText(body.reasonForJoining),
     source: normalizeText(body.source) || "Discord",
     priorService: body.priorService ?? false,
     priorArma: body.priorArma ?? false,
@@ -1092,6 +1390,9 @@ async function validateApplicationData(prisma, data, { requireComplete }) {
   if (requireComplete) {
     if (!data.firstName) errors.push("First name is required.");
     if (!data.lastName) errors.push("Last name is required.");
+    if (!data.age) errors.push("Age is required.");
+    if (!data.timeZone) errors.push("Time zone is required.");
+    if (!data.reasonForJoining) errors.push("Reason for joining is required.");
     if (!data.source) errors.push("Recruiting source is required.");
     if (!data.interestedUnitIds.length) errors.push("At least one interested unit is required.");
     if (!data.desiredMOSIds.length) errors.push("At least one desired MOS is required.");
@@ -1108,6 +1409,12 @@ async function validateApplicationData(prisma, data, { requireComplete }) {
 
   if (data.source && !RECRUITING_SOURCES.includes(data.source)) {
     errors.push("Recruiting source is invalid.");
+  }
+  if (data.age !== null && (!Number.isSafeInteger(data.age) || data.age <= 0)) {
+    errors.push("Age must be a positive whole number.");
+  }
+  if (data.timeZone && !APPLICATION_TIME_ZONES.includes(data.timeZone)) {
+    errors.push("Time zone is invalid.");
   }
 
   for (const [index, period] of data.servicePeriods.entries()) {
@@ -1174,6 +1481,9 @@ async function persistApplicationData(tx, applicationId, data) {
     data: {
       firstName: data.firstName || null,
       lastName: data.lastName || null,
+      age: data.age,
+      timeZone: data.timeZone || null,
+      reasonForJoining: data.reasonForJoining || null,
       source: data.source || null,
       priorService: data.priorService,
       priorArma: data.priorArma,
@@ -1195,7 +1505,7 @@ async function persistApplicationData(tx, applicationId, data) {
           joinedAt: unit.joinedAt,
           leftAt: unit.stillMember ? null : unit.leftAt,
           stillMember: unit.stillMember,
-          reasonLeft: unit.reasonLeft || null,
+          reasonLeft: unit.stillMember ? null : unit.reasonLeft || null,
           sortOrder: index,
         })),
       },
@@ -1281,7 +1591,7 @@ function normalizeArmaUnit(unit = {}) {
   const joinedAt = parseOptionalDate(unit.joinedAt);
   const leftAt = parseOptionalDate(unit.leftAt);
   const stillMember = readBoolean(unit.stillMember);
-  const reasonLeft = normalizeText(unit.reasonLeft);
+  const reasonLeft = stillMember ? "" : normalizeText(unit.reasonLeft);
   return {
     unitName,
     joinedAt,
@@ -1295,7 +1605,8 @@ function normalizeArmaUnit(unit = {}) {
 function parseOptionalDate(value) {
   const text = normalizeText(value);
   if (!text) return null;
-  const date = new Date(`${text}T00:00:00.000Z`);
+  const normalized = /^\d{4}-\d{2}$/.test(text) ? `${text}-01` : text;
+  const date = new Date(`${normalized}T00:00:00.000Z`);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -1333,24 +1644,100 @@ function buildAcceptedProfileName(application) {
   );
 }
 
-function activeUnitScopeIds(account) {
-  return (account.roleAssignments ?? [])
-    .filter((assignment) => isActiveRoleAssignment(assignment) && assignment.unitId)
-    .map((assignment) => assignment.unitId);
+function latestInformationRequestStage(application) {
+  return [...(application.statusHistory ?? [])]
+    .reverse()
+    .find((item) => item.newStatus === "MoreInfoRequested")?.stage;
 }
 
-function isUnitInActorScope(actor, unitId) {
-  return (actor.roleAssignments ?? []).some((assignment) => {
-    if (!isActiveRoleAssignment(assignment)) return false;
-    if (assignment.scopeType === "Global") return true;
-    return assignment.unitId === unitId;
+async function requireTargetUnitReviewAuthority({ prisma, actor, application }) {
+  if (!canTargetUnitReview(actor)) {
+    return failure("permission_denied", "Target-unit review permission is required.");
+  }
+
+  if (!application.targetUnitId) {
+    return failure("invalid_transition", "Application must have an assigned target unit.");
+  }
+
+  if (!(await isUnitInActorScope(prisma, actor, application.targetUnitId))) {
+    return failure(
+      "permission_denied",
+      "Reviewer does not have target-unit authority for this application.",
+    );
+  }
+
+  return { ok: true };
+}
+
+async function resolveApplicationUnitScope(prisma, actor) {
+  if (hasGlobalReviewOverride(actor)) {
+    return { ok: true, unitIds: null };
+  }
+
+  const assignments = (actor.roleAssignments ?? []).filter(
+    (assignment) => isActiveRoleAssignment(assignment) && assignment.unitId,
+  );
+
+  if (!assignments.length) {
+    return failure("permission_denied", "No target-unit review scope is assigned to this account.");
+  }
+
+  const units = await prisma.unit.findMany({
+    select: { id: true, parentId: true },
   });
+  const descendantMap = buildDescendantMap(units);
+  const scopedUnitIds = new Set();
+
+  for (const assignment of assignments) {
+    scopedUnitIds.add(assignment.unitId);
+    if (assignment.scopeIncludesDescendants) {
+      for (const descendantId of descendantMap.get(assignment.unitId) ?? []) {
+        scopedUnitIds.add(descendantId);
+      }
+    }
+  }
+
+  return { ok: true, unitIds: [...scopedUnitIds] };
+}
+
+async function isUnitInActorScope(prisma, actor, unitId) {
+  const scope = await resolveApplicationUnitScope(prisma, actor);
+  if (!scope.ok) return false;
+  return scope.unitIds === null || scope.unitIds.includes(unitId);
 }
 
 function hasGlobalReviewOverride(actor) {
   return (actor.roleAssignments ?? []).some(
     (assignment) => isActiveRoleAssignment(assignment) && assignment.scopeType === "Global",
   );
+}
+
+function buildDescendantMap(units) {
+  const childrenByParentId = new Map();
+  for (const unit of units) {
+    if (!unit.parentId) continue;
+    const children = childrenByParentId.get(unit.parentId) ?? [];
+    children.push(unit.id);
+    childrenByParentId.set(unit.parentId, children);
+  }
+
+  const descendantMap = new Map();
+  for (const unit of units) {
+    descendantMap.set(unit.id, collectDescendants(unit.id, childrenByParentId));
+  }
+
+  return descendantMap;
+}
+
+function collectDescendants(unitId, childrenByParentId) {
+  const descendants = [];
+  const stack = [...(childrenByParentId.get(unitId) ?? [])];
+  while (stack.length) {
+    const childId = stack.pop();
+    descendants.push(childId);
+    stack.push(...(childrenByParentId.get(childId) ?? []));
+  }
+  return descendants;
 }
 
 function isActiveRoleAssignment(assignment) {
@@ -1367,6 +1754,11 @@ function applicationInclude() {
       include: {
         authIdentities: true,
         personnelProfile: true,
+      },
+    },
+    claimedByAccount: {
+      include: {
+        authIdentities: true,
       },
     },
     targetUnit: true,

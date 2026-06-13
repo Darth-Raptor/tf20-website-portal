@@ -1,4 +1,16 @@
 import { catalogSource } from "../../prisma/catalog-source.mjs";
+import {
+  accountStatusLabel,
+  applicationStatusLabel,
+  billetDisplayLabel,
+  mosDisplayLabel,
+  personnelStatusLabel,
+  rankDisplayLabel,
+  standingDisplayLabel,
+  unitDisplayLabel,
+} from "../shared/display-labels.mjs";
+
+const ENUM_DISPLAY_LABELS = catalogSource.metadata?.enumDisplayLabels ?? {};
 
 function pageTemplate(title, body) {
   return `<!doctype html>
@@ -45,7 +57,7 @@ export function renderLoginScreen() {
   return pageTemplate(
     "TF20 Runtime Login",
     `<div class="card">
-      <h1>TF20 Runtime Foundation</h1>
+      <h1>Task Force 20 Integrated Personnel System</h1>
       <p class="muted">Sign in with Discord to test the new runtime auth, gate, and session foundation.</p>
       <p><a class="button" href="/auth/discord/start">Continue with Discord</a></p>
     </div>`,
@@ -59,7 +71,7 @@ export function renderPendingScreen(summary) {
       <h1>Pending Access</h1>
       <p class="muted">Your account is authenticated and guild-verified, but it is still pending activation.</p>
       <ul>
-        <li>Status: <code>${escapeHtml(displayAccountStatus(summary.account.status))}</code></li>
+        <li>Status: <code>${escapeHtml(accountStatusLabel(summary.account.status, ENUM_DISPLAY_LABELS))}</code></li>
         <li>Gate state: <code>${summary.gateState}</code></li>
         <li>Visible modules: <code>${summary.visibleModules.join(", ")}</code></li>
       </ul>
@@ -92,8 +104,8 @@ export function renderAuthenticatedScreen(summary) {
       <h1>Runtime Ready</h1>
       <p class="muted">The current runtime is live enough to prove auth, sessions, account gating, and module visibility.</p>
       <ul>
-        <li>Account: <code>${summary.account.displayName ?? summary.authIdentity.displayName ?? summary.authIdentity.username}</code></li>
-        <li>Status: <code>${escapeHtml(displayAccountStatus(summary.account.status))}</code></li>
+        <li>Account: <code>${escapeHtml(accountDisplayLabel(summary.account, summary.authIdentity))}</code></li>
+        <li>Status: <code>${escapeHtml(accountStatusLabel(summary.account.status, ENUM_DISPLAY_LABELS))}</code></li>
         <li>Gate state: <code>${summary.gateState}</code></li>
         <li>Visible modules: <code>${summary.visibleModules.join(", ")}</code></li>
         <li>Permissions: <code>${summary.permissions.join(", ") || "none"}</code></li>
@@ -115,12 +127,12 @@ export function renderPersonnelSelfScreen({ summary, profile }) {
           <h2>Profile</h2>
           <ul class="meta-list">
             <li>Name: <code>${escapeHtml(profile.name)}</code></li>
-            <li>Status: <code>${escapeHtml(displayPersonnelStatus(profile.status))}</code></li>
-            <li>Good standing: <code>${profile.goodStanding ? "Yes" : "No"}</code></li>
-            <li>Unit: <code>${escapeHtml(profile.currentUnit?.name ?? "Unassigned")}</code></li>
-            <li>Rank: <code>${escapeHtml(profile.currentRank?.name ?? "Unassigned")}</code></li>
-            <li>Billet: <code>${escapeHtml(profile.currentBillet?.name ?? "Unassigned")}</code></li>
-            <li>MOS: <code>${escapeHtml(profile.currentMOS?.name ?? "Unassigned")}</code></li>
+            <li>Status: <code>${escapeHtml(personnelStatusLabel(profile.status, ENUM_DISPLAY_LABELS))}</code></li>
+            <li>Good standing: <code>${standingDisplayLabel(profile.goodStanding)}</code></li>
+            <li>Unit: <code>${escapeHtml(unitDisplayLabel(profile.currentUnit))}</code></li>
+            <li>Rank: <code>${escapeHtml(rankDisplayLabel(profile.currentRank))}</code></li>
+            <li>Billet: <code>${escapeHtml(billetDisplayLabel(profile.currentBillet))}</code></li>
+            <li>MOS: <code>${escapeHtml(mosDisplayLabel(profile.currentMOS))}</code></li>
             <li>Joined: <code>${formatDate(profile.joinedAt)}</code></li>
             <li>Accepted: <code>${formatDate(profile.acceptedAt)}</code></li>
           </ul>
@@ -133,7 +145,7 @@ export function renderPersonnelSelfScreen({ summary, profile }) {
                 ? profile.statusHistory
                     .map(
                       (entry) =>
-                        `<li><strong>${escapeHtml(displayPersonnelStatus(entry.newStatus))}</strong> - ${formatDate(entry.effectiveAt)}<br /><span class="muted">${escapeHtml(entry.reason)}</span></li>`,
+                        `<li><strong>${escapeHtml(personnelStatusLabel(entry.newStatus, ENUM_DISPLAY_LABELS))}</strong> - ${formatDate(entry.effectiveAt)}<br /><span class="muted">${escapeHtml(entry.reason)}</span></li>`,
                     )
                     .join("")
                 : "<li>No status history recorded yet.</li>"
@@ -150,8 +162,8 @@ export function renderPersonnelSelfScreen({ summary, profile }) {
         <h1>My Personnel</h1>
         <p class="muted">This is the read-only personnel view for active members.</p>
         <ul class="meta-list">
-          <li>Account: <code>${escapeHtml(summary.account.displayName ?? summary.authIdentity.displayName ?? summary.authIdentity.username ?? summary.account.id)}</code></li>
-          <li>Status: <code>${escapeHtml(displayAccountStatus(summary.account.status))}</code></li>
+          <li>Account: <code>${escapeHtml(accountDisplayLabel(summary.account, summary.authIdentity))}</code></li>
+          <li>Status: <code>${escapeHtml(accountStatusLabel(summary.account.status, ENUM_DISPLAY_LABELS))}</code></li>
         </ul>
         <div class="button-row">
           <a class="button secondary" href="/">Back</a>
@@ -186,7 +198,7 @@ export function renderPersonnelRosterScreen({ items, units, filters, errorMessag
                 ${personnelStatusOptions()
                   .map(
                     (status) =>
-                      `<option value="${status}" ${filters.status === status ? "selected" : ""}>${escapeHtml(displayPersonnelStatus(status))}</option>`,
+                      `<option value="${status}" ${filters.status === status ? "selected" : ""}>${escapeHtml(personnelStatusLabel(status, ENUM_DISPLAY_LABELS))}</option>`,
                   )
                   .join("")}
               </select>
@@ -218,7 +230,7 @@ export function renderPersonnelRosterScreen({ items, units, filters, errorMessag
                     <th>Rank</th>
                     <th>Billet</th>
                     <th>MOS</th>
-                    <th>Standing</th>
+                    <th>Open</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -227,13 +239,13 @@ export function renderPersonnelRosterScreen({ items, units, filters, errorMessag
                     .map(
                       (item) => `<tr>
                     <td>${escapeHtml(item.name)}</td>
-                    <td>${escapeHtml(item.account.displayName ?? item.account.authIdentities[0]?.displayName ?? item.account.authIdentities[0]?.username ?? item.account.id)}</td>
-                    <td>${escapeHtml(displayPersonnelStatus(item.status))}</td>
-                    <td>${escapeHtml(item.currentUnit?.name ?? "Unassigned")}</td>
-                    <td>${escapeHtml(item.currentRank?.abbreviation ?? item.currentRank?.key ?? "—")}</td>
-                    <td>${escapeHtml(item.currentBillet?.name ?? "Unassigned")}</td>
-                    <td>${escapeHtml(item.currentMOS?.identifier ?? item.currentMOS?.key ?? "—")}</td>
-                    <td>${item.goodStanding ? "Good" : "Restricted"}</td>
+                    <td>${escapeHtml(accountDisplayLabel(item.account))}</td>
+                    <td>${escapeHtml(personnelStatusLabel(item.status, ENUM_DISPLAY_LABELS))}</td>
+                    <td>${escapeHtml(unitDisplayLabel(item.currentUnit))}</td>
+                    <td>${escapeHtml(rankDisplayLabel(item.currentRank, { compact: true }))}</td>
+                    <td>${escapeHtml(billetDisplayLabel(item.currentBillet))}</td>
+                    <td>${escapeHtml(mosDisplayLabel(item.currentMOS, { empty: "—" }))}</td>
+                    <td><a class="button secondary" href="/personnel/${item.id}">Open</a></td>
                     <td><a class="button secondary" href="/personnel/${item.id}">Open</a></td>
                   </tr>`,
                     )
@@ -271,13 +283,13 @@ export function renderPersonnelDetailScreen({
         <div class="card">
           <h2>${escapeHtml(profile.name)}</h2>
           <ul class="meta-list">
-            <li>Account: <code>${escapeHtml(profile.account.displayName ?? profile.account.authIdentities[0]?.displayName ?? profile.account.authIdentities[0]?.username ?? profile.account.id)}</code></li>
-            <li>Status: <code>${escapeHtml(displayPersonnelStatus(profile.status))}</code></li>
-            <li>Good standing: <code>${profile.goodStanding ? "Yes" : "No"}</code></li>
-            <li>Unit: <code>${escapeHtml(profile.currentUnit?.name ?? "Unassigned")}</code></li>
-            <li>Rank: <code>${escapeHtml(profile.currentRank?.name ?? "Unassigned")}</code></li>
-            <li>Billet: <code>${escapeHtml(profile.currentBillet?.name ?? "Unassigned")}</code></li>
-            <li>MOS: <code>${escapeHtml(profile.currentMOS?.name ?? "Unassigned")}</code></li>
+            <li>Account: <code>${escapeHtml(accountDisplayLabel(profile.account))}</code></li>
+            <li>Status: <code>${escapeHtml(personnelStatusLabel(profile.status, ENUM_DISPLAY_LABELS))}</code></li>
+            <li>Good standing: <code>${standingDisplayLabel(profile.goodStanding)}</code></li>
+            <li>Unit: <code>${escapeHtml(unitDisplayLabel(profile.currentUnit))}</code></li>
+            <li>Rank: <code>${escapeHtml(rankDisplayLabel(profile.currentRank))}</code></li>
+            <li>Billet: <code>${escapeHtml(billetDisplayLabel(profile.currentBillet))}</code></li>
+            <li>MOS: <code>${escapeHtml(mosDisplayLabel(profile.currentMOS))}</code></li>
             <li>Joined: <code>${formatDate(profile.joinedAt)}</code></li>
             <li>Accepted: <code>${formatDate(profile.acceptedAt)}</code></li>
           </ul>
@@ -285,12 +297,12 @@ export function renderPersonnelDetailScreen({
         <div class="card">
           <h2>Recent history</h2>
           <ul class="meta-list">
-            ${buildHistoryPreview("Status", profile.statusHistory, (entry) => `${escapeHtml(displayPersonnelStatus(entry.newStatus))} - ${formatDate(entry.effectiveAt)}`)}
-            ${buildHistoryPreview("Rank", profile.rankHistory, (entry) => `${escapeHtml(entry.rank?.name ?? "Unassigned")} - ${formatDate(entry.effectiveAt)}`)}
-            ${buildHistoryPreview("Unit", profile.unitAssignments, (entry) => `${escapeHtml(entry.unit?.name ?? "Unassigned")} - ${formatDate(entry.effectiveAt)}`)}
-            ${buildHistoryPreview("Billet", profile.billetAssignments, (entry) => `${escapeHtml(entry.billet?.name ?? "Unassigned")} - ${formatDate(entry.effectiveAt)}`)}
-            ${buildHistoryPreview("MOS", profile.mosHistory, (entry) => `${escapeHtml(entry.mos?.name ?? "Unassigned")} - ${formatDate(entry.effectiveAt)}`)}
-            ${buildHistoryPreview("Standing", profile.standingHistory, (entry) => `${entry.newGoodStanding ? "Good standing" : "Not in good standing"} - ${formatDate(entry.effectiveAt)}`)}
+            ${buildHistoryPreview("Status", profile.statusHistory, (entry) => `${escapeHtml(personnelStatusLabel(entry.newStatus, ENUM_DISPLAY_LABELS))} - ${formatDate(entry.effectiveAt)}`)}
+            ${buildHistoryPreview("Rank", profile.rankHistory, (entry) => `${escapeHtml(rankDisplayLabel(entry.rank))} - ${formatDate(entry.effectiveAt)}`)}
+            ${buildHistoryPreview("Unit", profile.unitAssignments, (entry) => `${escapeHtml(unitDisplayLabel(entry.unit))} - ${formatDate(entry.effectiveAt)}`)}
+            ${buildHistoryPreview("Billet", profile.billetAssignments, (entry) => `${escapeHtml(billetDisplayLabel(entry.billet))} - ${formatDate(entry.effectiveAt)}`)}
+            ${buildHistoryPreview("MOS", profile.mosHistory, (entry) => `${escapeHtml(mosDisplayLabel(entry.mos))} - ${formatDate(entry.effectiveAt)}`)}
+            ${buildHistoryPreview("Standing", profile.standingHistory, (entry) => `${standingDisplayLabel(entry.newGoodStanding)} - ${formatDate(entry.effectiveAt)}`)}
           </ul>
         </div>
       </div>
@@ -313,7 +325,7 @@ export function renderOwnApplicationScreen({
           <p class="muted">This is your live enlistment application record.</p>
         </div>
         <ul class="meta-list">
-          <li>Status: <span class="status">${escapeHtml(displayApplicationStatus(application.status))}</span></li>
+          <li>Status: <span class="status">${escapeHtml(applicationStatusLabel(application.status, ENUM_DISPLAY_LABELS))}</span></li>
           <li>Target unit: <code>${application.targetUnit?.name ?? "Unknown"}</code></li>
           <li>Submitted: <code>${formatDate(application.submittedAt)}</code></li>
           <li>Form version: <code>${application.formVersion}</code></li>
@@ -328,7 +340,7 @@ export function renderOwnApplicationScreen({
           <div class="panel">
             <h3>Status history</h3>
             <ul class="meta-list">
-              ${application.statusHistory.map((entry) => `<li><strong>${escapeHtml(displayApplicationStatus(entry.newStatus))}</strong> - ${formatDate(entry.createdAt)}<br /><span class="muted">${escapeHtml(entry.reason || "No reason recorded.")}</span></li>`).join("")}
+              ${application.statusHistory.map((entry) => `<li><strong>${escapeHtml(applicationStatusLabel(entry.newStatus, ENUM_DISPLAY_LABELS))}</strong> - ${formatDate(entry.createdAt)}<br /><span class="muted">${escapeHtml(entry.reason || "No reason recorded.")}</span></li>`).join("")}
             </ul>
           </div>
         </div>
@@ -345,8 +357,8 @@ export function renderOwnApplicationScreen({
         <h1>Applicant Flow</h1>
         <p class="muted">Pending users can submit one enlistment application and track its status here.</p>
         <ul class="meta-list">
-          <li>Account: <code>${escapeHtml(summary.account.displayName ?? summary.authIdentity.displayName ?? summary.authIdentity.username ?? summary.account.id)}</code></li>
-          <li>Status: <code>${escapeHtml(displayAccountStatus(summary.account.status))}</code></li>
+          <li>Account: <code>${escapeHtml(accountDisplayLabel(summary.account, summary.authIdentity))}</code></li>
+          <li>Status: <code>${escapeHtml(accountStatusLabel(summary.account.status, ENUM_DISPLAY_LABELS))}</code></li>
           <li>Gate state: <code>${summary.gateState}</code></li>
         </ul>
         <div class="button-row">
@@ -380,10 +392,10 @@ export function renderApplicationReviewQueueScreen({ applications, errorMessage 
             ? applications
                 .map(
                   (application) => `<div class="card">
-              <h2>${escapeHtml(application.account.displayName ?? application.account.authIdentities[0]?.displayName ?? application.account.authIdentities[0]?.username ?? application.account.id)}</h2>
+              <h2>${escapeHtml(accountDisplayLabel(application.account))}</h2>
               <p class="muted">${escapeHtml(application.targetUnit?.name ?? "Unknown unit")}</p>
               <ul class="meta-list">
-                <li>Status: <code>${escapeHtml(displayApplicationStatus(application.status))}</code></li>
+                <li>Status: <code>${escapeHtml(applicationStatusLabel(application.status, ENUM_DISPLAY_LABELS))}</code></li>
                 <li>Submitted: <code>${formatDate(application.submittedAt)}</code></li>
                 <li>Target unit: <code>${escapeHtml(application.targetUnit?.name ?? "Unknown")}</code></li>
               </ul>
@@ -415,7 +427,7 @@ export function renderApplicationReviewDetailScreen({
   const historyMarkup = application.statusHistory
     .map(
       (entry) =>
-        `<li><strong>${escapeHtml(displayApplicationStatus(entry.newStatus))}</strong> - ${formatDate(entry.createdAt)}<br /><span class="muted">${escapeHtml(entry.reason || "No reason recorded.")}</span></li>`,
+        `<li><strong>${escapeHtml(applicationStatusLabel(entry.newStatus, ENUM_DISPLAY_LABELS))}</strong> - ${formatDate(entry.createdAt)}<br /><span class="muted">${escapeHtml(entry.reason || "No reason recorded.")}</span></li>`,
     )
     .join("");
 
@@ -442,10 +454,10 @@ export function renderApplicationReviewDetailScreen({
       ${errorMessage ? `<div class="card"><strong>${escapeHtml(errorMessage)}</strong></div>` : ""}
       <div class="split">
         <div class="card">
-          <h2>${escapeHtml(application.account.displayName ?? application.account.authIdentities[0]?.displayName ?? application.account.authIdentities[0]?.username ?? application.account.id)}</h2>
+          <h2>${escapeHtml(accountDisplayLabel(application.account))}</h2>
           <ul class="meta-list">
             <li>Application ID: <code>${application.id}</code></li>
-            <li>Status: <code>${escapeHtml(displayApplicationStatus(application.status))}</code></li>
+            <li>Status: <code>${escapeHtml(applicationStatusLabel(application.status, ENUM_DISPLAY_LABELS))}</code></li>
             <li>Target unit: <code>${escapeHtml(application.targetUnit?.name ?? "Unknown")}</code></li>
             <li>Submitted: <code>${formatDate(application.submittedAt)}</code></li>
           </ul>
@@ -551,7 +563,7 @@ function renderPersonnelUpdateForm(profileId, lookups, formState) {
         <div class="field">
           <label for="status">Status</label>
           <select id="status" name="status" required>
-            ${lookups.statuses.map((status) => `<option value="${status}" ${formState.status === status ? "selected" : ""}>${escapeHtml(displayPersonnelStatus(status))}</option>`).join("")}
+            ${lookups.statuses.map((status) => `<option value="${status}" ${formState.status === status ? "selected" : ""}>${escapeHtml(personnelStatusLabel(status, ENUM_DISPLAY_LABELS))}</option>`).join("")}
           </select>
         </div>
       </div>
@@ -567,7 +579,7 @@ function renderPersonnelUpdateForm(profileId, lookups, formState) {
           <label for="currentRankId">Rank</label>
           <select id="currentRankId" name="currentRankId">
             <option value="">Unassigned</option>
-            ${lookups.ranks.map((rank) => `<option value="${rank.id}" ${formState.currentRankId === rank.id ? "selected" : ""}>${escapeHtml(rank.abbreviation ?? rank.key)} - ${escapeHtml(rank.name)}</option>`).join("")}
+            ${lookups.ranks.map((rank) => `<option value="${rank.id}" ${formState.currentRankId === rank.id ? "selected" : ""}>${escapeHtml(rankDisplayLabel(rank))}</option>`).join("")}
           </select>
         </div>
       </div>
@@ -580,19 +592,26 @@ function renderPersonnelUpdateForm(profileId, lookups, formState) {
           </select>
         </div>
         <div class="field">
-          <label for="currentMOSId">MOS</label>
+          <label for="currentMOSId">Primary MOS</label>
           <select id="currentMOSId" name="currentMOSId">
             <option value="">Unassigned</option>
-            ${lookups.mos.map((mos) => `<option value="${mos.id}" ${formState.currentMOSId === mos.id ? "selected" : ""}>${escapeHtml(mos.identifier ?? mos.key)} - ${escapeHtml(mos.name)}</option>`).join("")}
+            ${lookups.mos.map((mos) => `<option value="${mos.id}" ${formState.currentMOSId === mos.id ? "selected" : ""}>${escapeHtml(mosDisplayLabel(mos))}</option>`).join("")}
           </select>
         </div>
       </div>
       <div class="split">
         <div class="field">
+          <label for="currentSecondaryMOSId">Secondary MOS</label>
+          <select id="currentSecondaryMOSId" name="currentSecondaryMOSId">
+            <option value="">Unassigned</option>
+            ${lookups.mos.map((mos) => `<option value="${mos.id}" ${formState.currentSecondaryMOSId === mos.id ? "selected" : ""}>${escapeHtml(mosDisplayLabel(mos))}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field">
           <label for="goodStanding">Good standing</label>
           <select id="goodStanding" name="goodStanding" required>
-            <option value="true" ${String(formState.goodStanding) === "true" ? "selected" : ""}>Yes</option>
-            <option value="false" ${String(formState.goodStanding) === "false" ? "selected" : ""}>No</option>
+            <option value="true" ${String(formState.goodStanding) === "true" ? "selected" : ""}>Good</option>
+            <option value="false" ${String(formState.goodStanding) === "false" ? "selected" : ""}>Restricted</option>
           </select>
         </div>
         <div class="field">
@@ -660,6 +679,17 @@ function renderRejectCard(applicationId) {
   </div>`;
 }
 
+function accountDisplayLabel(account, authIdentity = null) {
+  return (
+    account?.displayName ??
+    authIdentity?.displayName ??
+    authIdentity?.username ??
+    account?.authIdentities?.[0]?.displayName ??
+    account?.authIdentities?.[0]?.username ??
+    "Unknown account"
+  );
+}
+
 function formatDate(value) {
   if (!value) return "Not recorded";
   return new Date(value).toLocaleString("en-US", {
@@ -700,34 +730,6 @@ function personnelStatusOptions() {
     "OtherThanHonorableDischarge",
     "DishonorableDischarge",
   ];
-}
-
-function displayAccountStatus(status) {
-  return status ?? "Unknown";
-}
-
-function displayPersonnelStatus(status) {
-  return enumDisplayLabel("PersonnelStatus", status);
-}
-
-function displayApplicationStatus(status) {
-  return humanizeIdentifier(status);
-}
-
-function enumDisplayLabel(enumName, value) {
-  if (!value) return "Unknown";
-  return (
-    catalogSource.metadata?.enumDisplayLabels?.[enumName]?.[value] ?? humanizeIdentifier(value)
-  );
-}
-
-function humanizeIdentifier(value) {
-  if (!value) return "Unknown";
-
-  return String(value)
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replaceAll("_", " ")
-    .trim();
 }
 
 function escapeHtml(value) {

@@ -108,6 +108,29 @@ export async function getPersonnelLookupData(prisma) {
     billets,
     mos,
     statuses: [...PERSONNEL_STATUS_OPTIONS],
+    standingOptions: [
+      { value: "true", label: "Good" },
+      { value: "false", label: "Restricted" },
+    ],
+  };
+}
+
+export async function getPersonnelEditOptions(prisma, actor) {
+  const [lookups, unitResult] = await Promise.all([
+    getPersonnelLookupData(prisma),
+    getScopedUnitFilters(prisma, actor),
+  ]);
+
+  if (!unitResult.ok) {
+    return unitResult;
+  }
+
+  return {
+    ok: true,
+    options: {
+      ...lookups,
+      units: unitResult.units,
+    },
   };
 }
 
@@ -172,17 +195,19 @@ export async function updatePersonnelProfile({ prisma, actor, personnelProfileId
   const nextRankId = normalizeNullableForeignKey(body.currentRankId);
   const nextBilletId = normalizeNullableForeignKey(body.currentBilletId);
   const nextMOSId = normalizeNullableForeignKey(body.currentMOSId);
+  const nextSecondaryMOSId = normalizeNullableForeignKey(body.currentSecondaryMOSId);
   const nextGoodStanding = parseBooleanLike(body.goodStanding);
 
   if (nextGoodStanding === null) {
     return failure("validation_error", "Good standing selection is required.");
   }
 
-  const [nextUnit, nextRank, nextBillet, nextMOS] = await Promise.all([
+  const [nextUnit, nextRank, nextBillet, nextMOS, nextSecondaryMOS] = await Promise.all([
     fetchActiveUnit(prisma, nextUnitId),
     fetchActiveRank(prisma, nextRankId),
     fetchActiveBillet(prisma, nextBilletId),
     fetchActiveMOS(prisma, nextMOSId),
+    fetchActiveMOS(prisma, nextSecondaryMOSId),
   ]);
 
   if (nextUnitId && !nextUnit) {
@@ -197,12 +222,19 @@ export async function updatePersonnelProfile({ prisma, actor, personnelProfileId
   if (nextMOSId && !nextMOS) {
     return failure("validation_error", "Selected MOS is invalid.");
   }
+  if (nextSecondaryMOSId && !nextSecondaryMOS) {
+    return failure("validation_error", "Selected secondary MOS is invalid.");
+  }
 
   if (scope.unitIds && nextUnitId && !scope.unitIds.includes(nextUnitId)) {
     return failure("permission_denied", "Selected unit is outside your update scope.");
   }
 
-  if (nextBillet && nextBillet.unitId && nextUnitId !== nextBillet.unitId) {
+  if (
+    nextBillet &&
+    nextBillet.unitId &&
+    !(await unitOwnsOrContainsAssignment(prisma, nextBillet.unitId, nextUnitId))
+  ) {
     return failure("validation_error", "Selected billet does not belong to the selected unit.");
   }
 
@@ -224,6 +256,7 @@ export async function updatePersonnelProfile({ prisma, actor, personnelProfileId
     currentRankId: nextRankId,
     currentBilletId: nextBilletId,
     currentMOSId: nextMOSId,
+    currentSecondaryMOSId: nextSecondaryMOSId,
     goodStanding: nextGoodStanding,
   };
 
@@ -234,6 +267,7 @@ export async function updatePersonnelProfile({ prisma, actor, personnelProfileId
     existing.currentRankId !== nextRankId ||
     existing.currentBilletId !== nextBilletId ||
     existing.currentMOSId !== nextMOSId ||
+    existing.currentSecondaryMOSId !== nextSecondaryMOSId ||
     existing.goodStanding !== nextGoodStanding;
 
   if (!changed) {
@@ -324,7 +358,21 @@ export async function updatePersonnelProfile({ prisma, actor, personnelProfileId
       reason,
       auditLogId: audit.id,
       now,
-      assignmentType: null,
+      assignmentType: "Primary",
+    });
+
+    await syncAssignmentHistory({
+      tx,
+      modelName: "personnelMOSHistory",
+      personnelProfileId: existing.id,
+      currentId: existing.currentSecondaryMOSId,
+      nextId: nextSecondaryMOSId,
+      relationField: "mosId",
+      actorId: actor.id,
+      reason,
+      auditLogId: audit.id,
+      now,
+      assignmentType: "Secondary",
     });
 
     if (existing.goodStanding !== nextGoodStanding) {
@@ -350,6 +398,7 @@ export async function updatePersonnelProfile({ prisma, actor, personnelProfileId
         currentRankId: nextRankId,
         currentBilletId: nextBilletId,
         currentMOSId: nextMOSId,
+        currentSecondaryMOSId: nextSecondaryMOSId,
         goodStanding: nextGoodStanding,
       },
     });
@@ -374,6 +423,7 @@ function rosterListInclude() {
     currentUnit: true,
     currentBillet: true,
     currentMOS: true,
+    currentSecondaryMOS: true,
   };
 }
 
@@ -385,9 +435,23 @@ function personnelProfileInclude() {
       },
     },
     currentRank: true,
-    currentUnit: true,
+    currentUnit: {
+      include: {
+        parent: unitParentInclude(),
+      },
+    },
     currentBillet: true,
     currentMOS: true,
+    currentSecondaryMOS: true,
+    qualifications: {
+      where: { status: "Active" },
+      orderBy: [{ grantedAt: "desc" }, { qualificationId: "asc" }],
+      include: { qualification: true },
+    },
+    awardRecords: {
+      orderBy: { awardedAt: "desc" },
+      include: { award: true },
+    },
     statusHistory: {
       orderBy: { effectiveAt: "desc" },
       take: 10,
@@ -415,6 +479,18 @@ function personnelProfileInclude() {
     standingHistory: {
       orderBy: { effectiveAt: "desc" },
       take: 10,
+    },
+  };
+}
+
+function unitParentInclude(depth = 5) {
+  if (depth <= 0) {
+    return true;
+  }
+
+  return {
+    include: {
+      parent: unitParentInclude(depth - 1),
     },
   };
 }
@@ -488,7 +564,7 @@ async function fetchActiveUnit(prisma, id) {
   if (!id) return null;
   return prisma.unit.findFirst({
     where: { id, status: "Active" },
-    select: { id: true },
+    select: { id: true, parentId: true },
   });
 }
 
@@ -543,6 +619,7 @@ async function syncAssignmentHistory({
     where: {
       personnelProfileId,
       endedAt: null,
+      ...(assignmentType ? { assignmentType } : {}),
     },
     data: {
       endedAt: now,
@@ -574,8 +651,34 @@ function serializePersonnelProfile(profile) {
     currentRankId: profile.currentRankId,
     currentBilletId: profile.currentBilletId,
     currentMOSId: profile.currentMOSId,
+    currentSecondaryMOSId: profile.currentSecondaryMOSId,
     goodStanding: profile.goodStanding,
   };
+}
+
+async function unitOwnsOrContainsAssignment(prisma, ownerUnitId, assignedUnitId) {
+  if (!ownerUnitId || !assignedUnitId) {
+    return false;
+  }
+
+  if (ownerUnitId === assignedUnitId) {
+    return true;
+  }
+
+  const units = await prisma.unit.findMany({
+    select: { id: true, parentId: true },
+  });
+  const unitsById = new Map(units.map((unit) => [unit.id, unit]));
+  let current = unitsById.get(assignedUnitId);
+
+  while (current?.parentId) {
+    if (current.parentId === ownerUnitId) {
+      return true;
+    }
+    current = unitsById.get(current.parentId);
+  }
+
+  return false;
 }
 
 function normalizeOptionalText(value) {

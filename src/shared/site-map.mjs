@@ -127,6 +127,13 @@ export const SITE_MAP_SECTIONS = [
           },
         ],
       },
+      {
+        id: "staff_applicant_review",
+        label: "Applicant Review",
+        path: "/staff/applicant-review",
+        icon: "applications",
+        visibility: { statuses: ["Active"], allOf: ["applications.review-target-unit"] },
+      },
     ],
   },
   {
@@ -265,7 +272,7 @@ export function findSiteMapNodeByPath(pathname) {
     }
   }
 
-  return null;
+  return findDynamicRouteNodeByPath(SITE_MAP_SECTIONS, normalizedPath);
 }
 
 export function findNavigationNodeByPath(navigation, pathname) {
@@ -285,7 +292,16 @@ export function findNavigationNodeByPath(navigation, pathname) {
     }
   }
 
-  return null;
+  return findDynamicRouteNodeByPath(navigation?.sections ?? [], normalizedPath);
+}
+
+export function isSectionDashboardMatch(match) {
+  return Boolean(
+    match?.type === "page" &&
+    match.node?.id?.endsWith("_dashboard") &&
+    match.node?.icon === "dashboard" &&
+    normalizePath(match.node?.path) === normalizePath(match.section?.path),
+  );
 }
 
 export function isSiteMapRoute(pathname) {
@@ -404,6 +420,91 @@ function normalizePath(pathname) {
       .split("?")[0]
       .split("#")[0] || "/";
   return path.length > 1 ? path.replace(/\/+$/g, "") : path;
+}
+
+function findDynamicRouteNodeByPath(sections, normalizedPath) {
+  const staffPersonnelDetailMatch = /^\/staff\/personnel-management\/([^/]+)$/.exec(normalizedPath);
+  if (staffPersonnelDetailMatch) {
+    const section = sections.find((item) => item.id === "staff");
+    const page = section?.pages?.find((item) => item.id === "staff_personnel_management");
+    if (!section || !page) {
+      return null;
+    }
+
+    return {
+      type: "detail",
+      section,
+      page,
+      node: {
+        ...compactNavigationNode({
+          ...page,
+          id: "staff_personnel_profile_detail",
+          label: "Personnel Profile",
+          path: normalizedPath,
+        }),
+        parentPageId: page.id,
+      },
+      params: {
+        personnelId: decodeURIComponent(staffPersonnelDetailMatch[1]),
+      },
+    };
+  }
+
+  const staffApplicantDetailMatch = /^\/staff\/applicant-review\/([^/]+)$/.exec(normalizedPath);
+  if (staffApplicantDetailMatch) {
+    const section = sections.find((item) => item.id === "staff");
+    const page = section?.pages?.find((item) => item.id === "staff_applicant_review");
+    if (!section || !page) {
+      return null;
+    }
+
+    return {
+      type: "detail",
+      section,
+      page,
+      node: {
+        ...compactNavigationNode({
+          ...page,
+          id: "staff_applicant_review_detail",
+          label: "Applicant Detail",
+          path: normalizedPath,
+        }),
+        parentPageId: page.id,
+      },
+      params: {
+        applicationId: decodeURIComponent(staffApplicantDetailMatch[1]),
+      },
+    };
+  }
+
+  const applicationDetailMatch = /^\/recruiting\/applications\/([^/]+)$/.exec(normalizedPath);
+  if (!applicationDetailMatch) {
+    return null;
+  }
+
+  const section = sections.find((item) => item.id === "recruiting");
+  const page = section?.pages?.find((item) => item.id === "recruiting_applications");
+  if (!section || !page) {
+    return null;
+  }
+
+  return {
+    type: "detail",
+    section,
+    page,
+    node: {
+      ...compactNavigationNode({
+        ...page,
+        id: "recruiting_application_detail",
+        label: "Application Detail",
+        path: normalizedPath,
+      }),
+      parentPageId: page.id,
+    },
+    params: {
+      applicationId: decodeURIComponent(applicationDetailMatch[1]),
+    },
+  };
 }
 
 function extractKeyBlock(text, startMarker, endMarker) {
