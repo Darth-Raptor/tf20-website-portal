@@ -59,8 +59,8 @@ test("award records split ribbons from other award types", () => {
       { award: { name: "Combat Infantryman Badge", type: "badge" } },
     ]),
     {
-      awards: ["AAM", "Combat Infantryman Badge"],
-      ribbons: ["OSR"],
+      awards: ["Army Achievement Medal", "Combat Infantryman Badge"],
+      ribbons: ["Overseas Service Ribbon"],
     },
   );
 });

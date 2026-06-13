@@ -27,11 +27,16 @@ import {
   updateOwnApplication,
   withdrawOwnApplication,
 } from "../../src/server/application-service.mjs";
-import { flattenPermissions } from "../../src/server/auth-service.mjs";
+import { flattenPermissions, resolveAuthenticatedAccount } from "../../src/server/auth-service.mjs";
 import {
   getPersonnelEditOptions,
   updatePersonnelProfile,
 } from "../../src/server/personnel-service.mjs";
+import {
+  createTrainingSession,
+  listOwnTrainingRecords,
+  updateTrainingSession,
+} from "../../src/server/training-service.mjs";
 
 const prisma = new PrismaClient();
 let sequence = 0;
@@ -715,6 +720,178 @@ test("personnel edit options expose scoped human-readable dropdown choices", asy
   ]);
 });
 
+test("trainer records pass/fail course sessions and owns corrections", async () => {
+  const trainer = await createAccountWithRole("trainer", "Active");
+  const otherTrainer = await createAccountWithRole("trainer", "Active");
+  const passedMember = await createActivePersonnel("Training Pass Member");
+  const failedMember = await createActivePersonnel("Training Fail Member");
+  const qualification = await prisma.qualification.create({
+    data: {
+      key: uniqueKey("training-qual"),
+      name: "Integration Training Qualification",
+      status: "Active",
+    },
+  });
+  const course = await prisma.trainingCourse.create({
+    data: {
+      key: uniqueKey("training-course"),
+      name: "Integration Training Course",
+      status: "Active",
+    },
+  });
+  await prisma.courseQualification.create({
+    data: {
+      courseId: course.id,
+      qualificationId: qualification.id,
+    },
+  });
+
+  const created = await createTrainingSession({
+    prisma,
+    actor: trainer,
+    body: {
+      courseId: course.id,
+      completedAt: "2026-06-13",
+      notes: "Integration training session.",
+      attendees: [
+        { personnelProfileId: passedMember.profile.id, outcome: "Pass" },
+        { personnelProfileId: failedMember.profile.id, outcome: "Fail", notes: "Retest needed." },
+      ],
+    },
+  });
+
+  assert.equal(created.ok, true);
+  assert.equal(created.session.summary.total, 2);
+  assert.equal(created.session.summary.passed, 1);
+  assert.equal(created.session.summary.failed, 1);
+
+  const passQualification = await prisma.personnelQualification.findUnique({
+    where: {
+      personnelProfileId_qualificationId: {
+        personnelProfileId: passedMember.profile.id,
+        qualificationId: qualification.id,
+      },
+    },
+  });
+  assert.equal(passQualification?.status, "Active");
+  assert.ok(passQualification.trainingRecordId);
+
+  const failQualification = await prisma.personnelQualification.findUnique({
+    where: {
+      personnelProfileId_qualificationId: {
+        personnelProfileId: failedMember.profile.id,
+        qualificationId: qualification.id,
+      },
+    },
+  });
+  assert.equal(failQualification, null);
+
+  const passedHistory = await listOwnTrainingRecords(prisma, passedMember.account);
+  const failedHistory = await listOwnTrainingRecords(prisma, failedMember.account);
+  assert.equal(passedHistory.ok, true);
+  assert.equal(failedHistory.ok, true);
+  assert.equal(passedHistory.items[0].outcome, "Pass");
+  assert.equal(failedHistory.items[0].outcome, "Fail");
+
+  const blockedEdit = await updateTrainingSession({
+    prisma,
+    actor: otherTrainer,
+    sessionId: created.session.id,
+    body: {
+      courseId: course.id,
+      completedAt: "2026-06-13",
+      attendees: [{ personnelProfileId: passedMember.profile.id, outcome: "Fail" }],
+    },
+  });
+  assert.equal(blockedEdit.ok, false);
+  assert.equal(blockedEdit.code, "permission_denied");
+
+  const corrected = await updateTrainingSession({
+    prisma,
+    actor: trainer,
+    sessionId: created.session.id,
+    body: {
+      courseId: course.id,
+      completedAt: "2026-06-13",
+      attendees: [
+        { personnelProfileId: passedMember.profile.id, outcome: "Fail", notes: "Corrected." },
+        { personnelProfileId: failedMember.profile.id, outcome: "Fail", notes: "Retest needed." },
+      ],
+    },
+  });
+  assert.equal(corrected.ok, true);
+  assert.equal(corrected.session.summary.passed, 0);
+  assert.equal(corrected.session.summary.failed, 2);
+
+  const revokedQualification = await prisma.personnelQualification.findUnique({
+    where: {
+      personnelProfileId_qualificationId: {
+        personnelProfileId: passedMember.profile.id,
+        qualificationId: qualification.id,
+      },
+    },
+  });
+  assert.equal(revokedQualification?.status, "Revoked");
+
+  const correctedHistory = await listOwnTrainingRecords(prisma, passedMember.account);
+  assert.equal(correctedHistory.items.length, 1);
+  assert.equal(correctedHistory.items[0].outcome, "Fail");
+});
+
+test("current members claim imported accounts through Discord authentication", async () => {
+  const member = await createActivePersonnel("Claimable Member");
+  const identity = member.account.authIdentities[0];
+
+  const resolved = await resolveAuthenticatedAccount({
+    prisma,
+    discordUser: {
+      id: identity.providerAccountId,
+      username: "claimed-member",
+      global_name: "Claimed Member",
+    },
+    guildPayload: { joined_at: "2026-06-13T00:00:00.000Z" },
+  });
+
+  assert.equal(resolved.created, false);
+  assert.equal(resolved.account.id, member.account.id);
+  assert.equal(resolved.account.status, "Active");
+  assert.ok(resolved.account.claimedAt);
+
+  const profile = await prisma.personnelProfile.findUniqueOrThrow({
+    where: { id: member.profile.id },
+  });
+  assert.ok(profile.claimedAt);
+
+  const claimAudit = await prisma.auditLog.findFirst({
+    where: {
+      targetAccountId: member.account.id,
+      targetPersonnelProfileId: member.profile.id,
+      action: "claim-current-member-account",
+    },
+  });
+  assert.ok(claimAudit);
+
+  const secondLogin = await resolveAuthenticatedAccount({
+    prisma,
+    discordUser: {
+      id: identity.providerAccountId,
+      username: "claimed-member",
+      global_name: "Claimed Member",
+    },
+    guildPayload: { joined_at: "2026-06-13T00:00:00.000Z" },
+  });
+  assert.equal(secondLogin.created, false);
+  assert.equal(
+    await prisma.auditLog.count({
+      where: {
+        targetAccountId: member.account.id,
+        action: "claim-current-member-account",
+      },
+    }),
+    1,
+  );
+});
+
 test("current roster import creates and merges member profiles idempotently", async () => {
   const existingDiscordId = uniqueKey("existing-discord");
   const importedDiscordId = uniqueKey("import-discord");
@@ -1019,6 +1196,20 @@ async function createAccountWithRole(roleKey, status, options = {}) {
       },
     },
   });
+}
+
+async function createActivePersonnel(name) {
+  const account = await createAccountWithRole("member", "Active");
+  const profile = await prisma.personnelProfile.create({
+    data: {
+      accountId: account.id,
+      name: `${name} ${uniqueKey("profile")}`,
+      status: "Active",
+      joinedAt: new Date("2026-01-01T00:00:00.000Z"),
+    },
+  });
+
+  return { account, profile };
 }
 
 async function activeUnit(key) {

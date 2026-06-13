@@ -27,6 +27,8 @@ import {
   mosDisplayLabel,
   personnelStatusLabel,
   rankDisplayLabel,
+  trainingCourseDisplayLabel,
+  trainingOutcomeLabel,
   unitDisplayLabel,
 } from "../../shared/display-labels.mjs";
 import {
@@ -36,6 +38,12 @@ import {
   resolveVisibleNavigation,
 } from "../../shared/site-map.mjs";
 import { buildPersonnelProfileViewModel } from "../../shared/profile-view-model.mjs";
+import airAssaultImage from "./assets/public-page/air-assault.webp";
+import casualtyEvacImage from "./assets/public-page/casualty-evac.webp";
+import nightRaidImage from "./assets/public-page/night-raid.png";
+import nightSkyImage from "./assets/public-page/night-sky.png";
+import rangeTrainingImage from "./assets/public-page/range-training.png";
+import tf20HeroImage from "./assets/public-page/tf20-hero.png";
 import tf20Crest from "./assets/tf20-crest.png";
 
 const ICONS = {
@@ -57,9 +65,81 @@ const ICONS = {
   user: User,
 };
 
+const DISCORD_INVITE_URL = "https://discord.gg/cdGHUztUDz";
+
+const DIFFERENTIATORS = [
+  {
+    title: "Realism with consequences",
+    body: "Task Force 20 uses a custom persistence mod built for the unit, allowing single missions to continue across multiple play sessions with saved player positions, vehicle locations, inventories, health, damage, and more.",
+  },
+  {
+    title: "Flexible operation times",
+    body: "The Task Force operates around Central time, with operations commonly landing on Tuesdays, Thursdays, and Saturdays around 1900 CST. Individual units can schedule missions at times that fit their teams instead of being locked to one rigid schedule.",
+  },
+  {
+    title: "Deployment rotations",
+    body: "Campaigns are persistent instead of one-off missions. Logistics, ammunition, medical supplies, and mission outcomes carry forward until a campaign ends and the Task Force rotates home for training, testing, and reset time.",
+  },
+];
+
+const FEATURE_STORIES = [
+  {
+    title: "Immersive special operations campaigns",
+    body: "Detailed Eden-built missions and unit-specific mods push gameplay beyond basic interaction loops, keeping the focus on tactics, communication, and believable mission flow.",
+    image: nightRaidImage,
+    imageAlt: "Task Force 20 operators conducting a night raid under night vision.",
+  },
+  {
+    title: "Training that supports the next deployment",
+    body: "Home rotations create room to sharpen skills, test gear, practice new procedures, and prepare the next campaign without burning out the teams running it.",
+    image: rangeTrainingImage,
+    imageAlt: "Task Force 20 members training beside a range target.",
+  },
+  {
+    title: "Joint force capability",
+    body: "Ground teams, aviation, medical support, and specialist roles combine to recreate special operations with structure and purpose.",
+    image: casualtyEvacImage,
+    imageAlt: "Task Force 20 members evacuating a casualty during an operation.",
+  },
+];
+
+const LOOKING_FOR = [
+  "Mature players who want a fully immersive and detailed experience.",
+  "Players who value realism over easy gameplay.",
+  "Members driven to build something new and push the boundaries of Arma 3.",
+  "Leaders willing to invest in others and grow a team.",
+];
+
+const REQUIREMENTS = [
+  "Must be at least 17 years old.",
+  "Must speak fluent English.",
+  "Must have a working microphone or headset, with no open mic or speakers.",
+  "Must have at least 100 Arma 3 hours.",
+];
+
+const CURRENT_UNITS = ["A Co, 1/75th Ranger Regiment", "1 Troop, A Squadron, 1st SFOD-Delta"];
+
+const CURRENT_MOS_OPENINGS = [
+  "11B Infantryman",
+  "11C Mortarman",
+  "12B Combat Engineer",
+  "13F Joint Fire Support Specialist",
+  "15W Unmanned Aerial Systems Operator",
+  "25C Radio Operator-Maintainer",
+  "25E Electromagnetic Spectrum Manager [requires Contact DLC]",
+  "68W Combat Medic",
+  "74D CBRN Specialist [requires Contact DLC]",
+];
+
+const FUTURE_UNITS = [
+  "1-RRC, STB, 75th RR",
+  "B Co, 2/160th SOAR",
+  "1st Joint Special Operations Air Component",
+];
+
 export function App() {
-  const session = useSession();
   const [path, setPath] = useState(() => window.location.pathname);
+  const session = useSession(path !== "/");
 
   useEffect(() => {
     const handlePopState = () => setPath(window.location.pathname);
@@ -76,6 +156,10 @@ export function App() {
     }
   };
 
+  if (path === "/") {
+    return <PublicLandingPage />;
+  }
+
   if (session.status === "loading") {
     return <LoadingScreen />;
   }
@@ -87,10 +171,15 @@ export function App() {
   return <PortalShell path={path} session={session} onNavigate={navigate} />;
 }
 
-function useSession() {
+function useSession(enabled = true) {
   const [state, setState] = useState({ status: "loading", error: null });
 
   useEffect(() => {
+    if (!enabled) {
+      setState({ status: "idle", error: null });
+      return undefined;
+    }
+
     let isActive = true;
 
     async function load() {
@@ -131,7 +220,7 @@ function useSession() {
     return () => {
       isActive = false;
     };
-  }, []);
+  }, [enabled]);
 
   return state;
 }
@@ -161,15 +250,155 @@ async function fetchJson(path, options = {}) {
   }
 }
 
+function PublicLandingPage() {
+  useEffect(() => {
+    const previousTitle = document.title;
+    document.title = "Task Force 20 | Arma 3 Realism Unit";
+    return () => {
+      document.title = previousTitle;
+    };
+  }, []);
+
+  return (
+    <div className="public-page">
+      <header className="public-nav" aria-label="Task Force 20 public navigation">
+        <a className="public-brand" href="/" aria-label="Task Force 20 homepage">
+          <img src={tf20Crest} alt="" />
+          <span>Task Force 20</span>
+        </a>
+        <nav className="public-nav-links" aria-label="Page sections">
+          <a href="#different">What makes us different</a>
+          <a href="#requirements">Requirements</a>
+          <a href="#openings">Openings</a>
+        </nav>
+        <a className="public-nav-action" href="/portal">
+          Login
+        </a>
+      </header>
+
+      <main>
+        <section className="public-hero" style={{ "--hero-image": `url(${tf20HeroImage})` }}>
+          <div className="public-hero-overlay">
+            <div className="public-hero-copy">
+              <span className="public-kicker">Arma 3 Realism Unit</span>
+              <h1>Task Force 20</h1>
+              <p>
+                Task Force 20 is an Arma 3 real-sim unit focused on realism, tactics, and immersion.
+                With detailed Eden-built missions and custom systems that push gameplay deeper than
+                basic interaction, our goal is to provide the most accurate recreation of special
+                operations possible in Arma 3.
+              </p>
+              <div className="public-actions">
+                <a className="public-primary-action" href="/auth/discord/start">
+                  Apply
+                </a>
+                <a className="public-secondary-action" href={DISCORD_INVITE_URL}>
+                  Join our Discord
+                </a>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="public-section public-intro-section" id="different">
+          <div className="public-section-heading">
+            <span className="public-kicker">What Makes Us Different</span>
+            <h2>Persistent campaigns, realistic tactics, and teams that can breathe.</h2>
+          </div>
+          <div className="public-card-grid">
+            {DIFFERENTIATORS.map((item) => (
+              <article className="public-info-card" key={item.title}>
+                <h3>{item.title}</h3>
+                <p>{item.body}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="public-feature-stack" aria-label="Task Force 20 operations">
+          {FEATURE_STORIES.map((feature) => (
+            <article className="public-feature" key={feature.title}>
+              <img src={feature.image} alt={feature.imageAlt} />
+              <div>
+                <h2>{feature.title}</h2>
+                <p>{feature.body}</p>
+              </div>
+            </article>
+          ))}
+        </section>
+
+        <section className="public-media-band" aria-label="Task Force 20 deployment imagery">
+          <img src={nightSkyImage} alt="Task Force 20 members silhouetted under a night sky." />
+          <img src={airAssaultImage} alt="Task Force 20 helicopters flying over an urban area." />
+        </section>
+
+        <section className="public-section public-roster-section" id="requirements">
+          <div className="public-section-heading">
+            <span className="public-kicker">Recruiting</span>
+            <h2>Who we are looking for</h2>
+          </div>
+          <div className="public-list-layout">
+            <PublicList title="Ideal Members" items={LOOKING_FOR} />
+            <PublicList title="Requirements" items={REQUIREMENTS} />
+          </div>
+        </section>
+
+        <section className="public-section public-openings-section" id="openings">
+          <div className="public-section-heading">
+            <span className="public-kicker">Current Structure</span>
+            <h2>Units and MOS openings</h2>
+          </div>
+          <div className="public-list-layout three-column">
+            <PublicList title="Current Units" items={CURRENT_UNITS} />
+            <PublicList title="Current MOS Openings" items={CURRENT_MOS_OPENINGS} />
+            <PublicList title="Future Units" items={FUTURE_UNITS} />
+          </div>
+        </section>
+
+        <section className="public-final-cta">
+          <span className="public-kicker">Ready to step in?</span>
+          <h2>Start your Task Force 20 application.</h2>
+          <p>
+            Apply through Discord authentication, then continue into the TF20 portal to complete
+            your applicant profile and application. Discord membership is required before
+            application access opens.
+          </p>
+          <div className="public-actions">
+            <a className="public-primary-action" href="/auth/discord/start">
+              Apply
+            </a>
+            <a className="public-secondary-action" href={DISCORD_INVITE_URL}>
+              Join our Discord
+            </a>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function PublicList({ items, title }) {
+  return (
+    <article className="public-list-card">
+      <h3>{title}</h3>
+      <ul>
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
 function PortalShell({ path, session, onNavigate }) {
   const [detailCollapsed, setDetailCollapsed] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const navigation = session.navigation ?? { defaultPath: null, sections: [] };
   const defaultPath = navigation.defaultPath;
-  const effectivePath = path === "/" && defaultPath ? defaultPath : path;
+  const effectivePath = path === "/portal" && defaultPath ? defaultPath : path;
 
   useEffect(() => {
-    if (path === "/" && defaultPath) {
+    if (path === "/portal" && defaultPath) {
       onNavigate(defaultPath, { replace: true });
     }
   }, [path, defaultPath, onNavigate]);
@@ -407,6 +636,8 @@ function Workspace({ navigation, path, session, siteMapMatch, visibleMatch, onNa
       return <ProfileWorkspace session={session} />;
     case "user_application":
       return <ApplicantApplicationWorkspace />;
+    case "user_training":
+      return <UserTrainingWorkspace />;
     case "staff_personnel_management":
       return (
         <StaffPersonnelManagementWorkspace
@@ -440,6 +671,8 @@ function Workspace({ navigation, path, session, siteMapMatch, visibleMatch, onNa
           onNavigate={onNavigate}
         />
       );
+    case "training_records":
+      return <TrainingRecordsWorkspace />;
     default:
       return <ContractPlaceholder match={visibleMatch} />;
   }
@@ -996,6 +1229,390 @@ function ApplicantApplicationWorkspace() {
           </div>
         ) : null}
       </section>
+    </div>
+  );
+}
+
+function UserTrainingWorkspace() {
+  const resource = useApiResource("/training/self");
+
+  return (
+    <div className="workspace-grid">
+      <section className="wide-panel application-panel">
+        <PanelHeader title="Training" />
+        <UserTrainingContent resource={resource} />
+      </section>
+    </div>
+  );
+}
+
+function UserTrainingContent({ resource }) {
+  if (resource.status === "loading") {
+    return <SkeletonRows />;
+  }
+
+  if (resource.status === "error") {
+    return <EmptyState title="Training unavailable" detail={resource.error} />;
+  }
+
+  const items = resource.data?.items ?? [];
+  if (!items.length) {
+    return (
+      <EmptyState
+        title="No training records"
+        detail="No completed or failed training records were found."
+      />
+    );
+  }
+
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Course</th>
+            <th>Completion Date</th>
+            <th>Status</th>
+            <th>Instructor/Recorded By</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.id}>
+              <td>{trainingCourseDisplayLabel(item.course ?? item.session?.course)}</td>
+              <td>{formatDate(item.completedAt ?? item.session?.completedAt)}</td>
+              <td>
+                <span className="status-pill">{trainingOutcomeLabel(item.outcome)}</span>
+              </td>
+              <td>
+                {accountDisplayName(item.instructorAccount ?? item.recordedByAccount, "Unknown")}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TrainingRecordsWorkspace() {
+  const [state, setState] = useState({
+    status: "loading",
+    options: { courses: [], personnel: [] },
+    sessions: [],
+    error: null,
+  });
+  const [form, setForm] = useState(() => blankTrainingForm());
+  const [message, setMessage] = useState("");
+  const [editingSessionId, setEditingSessionId] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    setState((current) => ({ ...current, status: "loading", error: null }));
+    const [optionsResult, sessionsResult] = await Promise.all([
+      fetchJson("/training/options"),
+      fetchJson("/training/sessions"),
+    ]);
+
+    if (!optionsResult.ok || !sessionsResult.ok) {
+      setState({
+        status: "error",
+        options: { courses: [], personnel: [] },
+        sessions: [],
+        error:
+          optionsResult.payload?.error?.message ??
+          sessionsResult.payload?.error?.message ??
+          "Unable to load training records.",
+      });
+      return;
+    }
+
+    setState({
+      status: "ready",
+      options: optionsResult.payload?.data ?? { courses: [], personnel: [] },
+      sessions: sessionsResult.payload?.items ?? [],
+      error: null,
+    });
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const resetForm = () => {
+    setForm(blankTrainingForm());
+    setEditingSessionId("");
+  };
+
+  const submit = async () => {
+    setSaving(true);
+    setMessage(editingSessionId ? "Saving training session..." : "Recording training session...");
+    const result = await fetchJson(
+      editingSessionId ? `/training/sessions/${editingSessionId}` : "/training/sessions",
+      {
+        method: editingSessionId ? "PATCH" : "POST",
+        body: form,
+      },
+    );
+    setSaving(false);
+
+    if (!result.ok) {
+      setMessage(result.payload?.error?.message ?? "Training session save failed.");
+      return;
+    }
+
+    setMessage(editingSessionId ? "Training session updated." : "Training session recorded.");
+    resetForm();
+    await load();
+  };
+
+  const editSession = async (sessionId) => {
+    setMessage("Loading training session...");
+    const result = await fetchJson(`/training/sessions/${sessionId}`);
+    if (!result.ok) {
+      setMessage(result.payload?.error?.message ?? "Unable to load training session.");
+      return;
+    }
+
+    const session = result.payload?.data;
+    setEditingSessionId(session.id);
+    setForm(trainingSessionToForm(session));
+    setMessage("Editing training session.");
+  };
+
+  if (state.status === "loading") {
+    return <SkeletonRows />;
+  }
+
+  if (state.status === "error") {
+    return <EmptyState title="Training unavailable" detail={state.error} />;
+  }
+
+  return (
+    <div className="workspace-grid">
+      <section className="wide-panel application-panel">
+        {message ? (
+          <div className="form-message">
+            <strong>{message}</strong>
+          </div>
+        ) : null}
+        <div className="application-form">
+          <ApplicationReviewSection title="COURSE">
+            <div className="application-section-row">
+              <Field label="Course">
+                <select
+                  value={form.courseId}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, courseId: event.target.value }))
+                  }
+                >
+                  <option value="">Choose one</option>
+                  {(state.options.courses ?? []).map((course) => (
+                    <option key={course.id} value={course.id}>
+                      {trainingCourseDisplayLabel(course)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Completion Date">
+                <input
+                  type="date"
+                  value={form.completedAt}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, completedAt: event.target.value }))
+                  }
+                />
+              </Field>
+            </div>
+          </ApplicationReviewSection>
+          <ApplicationReviewSection title="ATTENDEES">
+            <TrainingAttendeeEditor
+              attendees={form.attendees}
+              personnel={state.options.personnel ?? []}
+              setForm={setForm}
+            />
+          </ApplicationReviewSection>
+          <ApplicationReviewSection title="SESSION NOTES">
+            <Field label="Notes">
+              <textarea
+                value={form.notes}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, notes: event.target.value }))
+                }
+              />
+            </Field>
+          </ApplicationReviewSection>
+          <div className="button-row">
+            <button
+              className="primary-action button-like"
+              disabled={saving}
+              type="button"
+              onClick={submit}
+            >
+              {editingSessionId ? "Save training session" : "Record training session"}
+            </button>
+            {editingSessionId ? (
+              <button
+                className="secondary-action"
+                disabled={saving}
+                type="button"
+                onClick={resetForm}
+              >
+                Cancel
+              </button>
+            ) : null}
+          </div>
+          <ApplicationReviewSection title="RECORDED SESSIONS">
+            <TrainingSessionList items={state.sessions} onEdit={editSession} />
+          </ApplicationReviewSection>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TrainingAttendeeEditor({ attendees, personnel, setForm }) {
+  const selectedPersonnelIds = new Set(attendees.map((attendee) => attendee.personnelProfileId));
+  const updateAttendee = (index, changes) => {
+    setForm((current) => ({
+      ...current,
+      attendees: current.attendees.map((attendee, currentIndex) =>
+        currentIndex === index ? { ...attendee, ...changes } : attendee,
+      ),
+    }));
+  };
+  const removeAttendee = (index) => {
+    setForm((current) => ({
+      ...current,
+      attendees: current.attendees.filter((item, currentIndex) => currentIndex !== index),
+    }));
+  };
+  const addAttendee = () => {
+    setForm((current) => ({
+      ...current,
+      attendees: [...current.attendees, blankTrainingAttendee()],
+    }));
+  };
+
+  return (
+    <div className="training-attendee-editor">
+      {attendees.map((attendee, index) => (
+        <div className="training-attendee-row" key={index}>
+          <Field label="Attendee">
+            <select
+              value={attendee.personnelProfileId}
+              onChange={(event) =>
+                updateAttendee(index, { personnelProfileId: event.target.value })
+              }
+            >
+              <option value="">Choose one</option>
+              {personnel.map((profile) => {
+                const selectedElsewhere =
+                  selectedPersonnelIds.has(profile.id) &&
+                  profile.id !== attendee.personnelProfileId;
+                return (
+                  <option disabled={selectedElsewhere} key={profile.id} value={profile.id}>
+                    {personnelOptionLabel(profile)}
+                  </option>
+                );
+              })}
+            </select>
+          </Field>
+          <div className="training-outcome-controls" aria-label="Training outcome">
+            <label className="checkbox-choice">
+              <input
+                checked={attendee.outcome === "Pass"}
+                type="checkbox"
+                onChange={(event) =>
+                  updateAttendee(index, { outcome: event.target.checked ? "Pass" : "" })
+                }
+              />
+              <span>Pass</span>
+            </label>
+            <label className="checkbox-choice">
+              <input
+                checked={attendee.outcome === "Fail"}
+                type="checkbox"
+                onChange={(event) =>
+                  updateAttendee(index, { outcome: event.target.checked ? "Fail" : "" })
+                }
+              />
+              <span>Fail</span>
+            </label>
+          </div>
+          <Field label="Attendee Notes">
+            <textarea
+              value={attendee.notes}
+              onChange={(event) => updateAttendee(index, { notes: event.target.value })}
+            />
+          </Field>
+          <button
+            className="secondary-action compact-action"
+            disabled={attendees.length === 1}
+            type="button"
+            onClick={() => removeAttendee(index)}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      <button className="secondary-action" type="button" onClick={addAttendee}>
+        Add attendee
+      </button>
+    </div>
+  );
+}
+
+function TrainingSessionList({ items, onEdit }) {
+  if (!items.length) {
+    return (
+      <EmptyState
+        title="No recorded sessions"
+        detail="No training sessions have been recorded yet."
+      />
+    );
+  }
+
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Course</th>
+            <th>Completion Date</th>
+            <th>Attendees</th>
+            <th>Recorded By</th>
+            <th>
+              <span className="visually-hidden">Edit session</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.id}>
+              <td>{trainingCourseDisplayLabel(item.course)}</td>
+              <td>{formatDate(item.completedAt)}</td>
+              <td>
+                {item.summary?.total ?? 0} total / {item.summary?.passed ?? 0} pass /{" "}
+                {item.summary?.failed ?? 0} fail
+              </td>
+              <td>
+                {accountDisplayName(item.instructorAccount ?? item.recordedByAccount, "Unknown")}
+              </td>
+              <td className="application-open-cell">
+                <button
+                  className="secondary-action compact-action"
+                  disabled={!item.permissions?.canEdit}
+                  type="button"
+                  onClick={() => onEdit(item.id)}
+                >
+                  EDIT
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -2469,6 +3086,42 @@ function blankApplicationForm() {
   };
 }
 
+function blankTrainingForm() {
+  return {
+    courseId: "",
+    completedAt: todayDateInput(),
+    notes: "",
+    attendees: [blankTrainingAttendee()],
+  };
+}
+
+function blankTrainingAttendee() {
+  return {
+    personnelProfileId: "",
+    outcome: "",
+    notes: "",
+  };
+}
+
+function trainingSessionToForm(session) {
+  if (!session) {
+    return blankTrainingForm();
+  }
+
+  return {
+    courseId: session.courseId ?? "",
+    completedAt: dateInputValue(session.completedAt),
+    notes: session.notes ?? "",
+    attendees: (session.records ?? []).length
+      ? session.records.map((record) => ({
+          personnelProfileId: record.personnelProfileId ?? "",
+          outcome: record.outcome ?? "",
+          notes: record.notes ?? "",
+        }))
+      : [blankTrainingAttendee()],
+  };
+}
+
 function applicationToForm(application) {
   if (!application) {
     return blankApplicationForm();
@@ -2562,12 +3215,18 @@ function applicationDisplayName(application) {
   return legalName || application?.account?.displayName || "Unnamed applicant";
 }
 
-function accountDisplayName(account) {
+function personnelOptionLabel(profile) {
+  const rank = profile?.currentRank ? rankDisplayLabel(profile.currentRank, { compact: true }) : "";
+  const unit = profile?.currentUnit ? unitDisplayLabel(profile.currentUnit) : "";
+  return [profile?.name, rank, unit].filter(Boolean).join(" | ") || "Unnamed member";
+}
+
+function accountDisplayName(account, fallback = "another recruiter") {
   return (
     account?.displayName ||
     account?.authIdentities?.[0]?.displayName ||
     account?.authIdentities?.[0]?.username ||
-    "another recruiter"
+    fallback
   );
 }
 
@@ -2631,6 +3290,23 @@ function monthInputValue(value) {
   }
 
   return date.toISOString().slice(0, 7);
+}
+
+function dateInputValue(value) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toISOString().slice(0, 10);
+}
+
+function todayDateInput() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function JsonPreview({ data }) {

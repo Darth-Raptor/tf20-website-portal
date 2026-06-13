@@ -62,5 +62,13 @@ export function mosDisplayLabel(mos, { empty = "Unassigned" } = {}) {
 }
 
 export function awardDisplayLabel(record) {
-  return record?.award?.abbreviation ?? record?.award?.name ?? record?.name ?? "";
+  return record?.award?.name ?? record?.award?.abbreviation ?? record?.name ?? "";
+}
+
+export function trainingCourseDisplayLabel(course) {
+  return course?.name ?? humanizeIdentifier(course?.key, "Unassigned");
+}
+
+export function trainingOutcomeLabel(outcome) {
+  return enumDisplayLabel("TrainingOutcome", outcome);
 }

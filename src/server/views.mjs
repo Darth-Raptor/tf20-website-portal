@@ -11,6 +11,7 @@ import {
 } from "../shared/display-labels.mjs";
 
 const ENUM_DISPLAY_LABELS = catalogSource.metadata?.enumDisplayLabels ?? {};
+const DISCORD_INVITE_URL = "https://discord.gg/cdGHUztUDz";
 
 function pageTemplate(title, body) {
   return `<!doctype html>
@@ -84,13 +85,28 @@ export function renderPendingScreen(summary) {
 }
 
 export function renderBlockedScreen(reason) {
+  if (reason === "not_in_guild") {
+    return pageTemplate(
+      "Join Discord to Apply",
+      `<div class="card">
+        <h1>Join the Task Force 20 Discord to apply</h1>
+        <p class="muted">Applications are only available to members of the Task Force 20 Discord server.</p>
+        <p>Join the Discord first, then return to the site and apply again with Discord authentication.</p>
+        <div class="button-row">
+          <a class="button" href="${DISCORD_INVITE_URL}">Join Discord</a>
+          <a class="button secondary" href="/">Return home</a>
+        </div>
+      </div>`,
+    );
+  }
+
   return pageTemplate(
     "Blocked",
     `<div class="card">
       <h1>Access Blocked</h1>
       <p class="muted">The runtime gate blocked access.</p>
-      <p>Reason: <code>${reason}</code></p>
-      <p><a class="button" href="/">Return to login</a></p>
+      <p>Reason: <code>${escapeHtml(reason)}</code></p>
+      <p><a class="button" href="/">Return home</a></p>
     </div>`,
   );
 }

@@ -43,6 +43,14 @@ import {
   updatePersonnelProfile,
 } from "./personnel-service.mjs";
 import {
+  createTrainingSession,
+  getTrainingOptions,
+  getTrainingSession,
+  listOwnTrainingRecords,
+  listTrainingSessions,
+  updateTrainingSession,
+} from "./training-service.mjs";
+import {
   buildDiscordAuthorizationUrl,
   buildSessionSummary,
   createSession,
@@ -242,14 +250,14 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       );
 
       if (resolved.account.status === "Pending") {
-        return res.redirect("/");
+        return res.redirect("/portal");
       }
 
       if (resolved.account.status !== "Active") {
         return res.redirect(`/auth/blocked?reason=${resolved.account.status.toLowerCase()}`);
       }
 
-      return res.redirect("/");
+      return res.redirect("/portal");
     } catch (error) {
       return next(error);
     }
@@ -571,6 +579,107 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
       }
 
       return sendDetail(res, result.profile);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.get("/training/options", requireAuthenticatedSession, async (req, res, next) => {
+    try {
+      const result = await getTrainingOptions(prisma, req.context.account);
+      if (!result.ok) {
+        return sendTrainingError(res, result);
+      }
+
+      return res.status(200).json({
+        data: result.options,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.get("/training/sessions", requireAuthenticatedSession, async (req, res, next) => {
+    try {
+      const result = await listTrainingSessions(prisma, req.context.account);
+      if (!result.ok) {
+        return sendTrainingError(res, result);
+      }
+
+      return res.status(200).json({
+        items: result.items,
+        meta: { count: result.items.length },
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post("/training/sessions", requireAuthenticatedSession, async (req, res, next) => {
+    try {
+      const result = await createTrainingSession({
+        prisma,
+        actor: req.context.account,
+        body: req.body,
+      });
+      if (!result.ok) {
+        return sendTrainingError(res, result);
+      }
+
+      return res.status(201).json({
+        data: result.session,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.get("/training/sessions/:id", requireAuthenticatedSession, async (req, res, next) => {
+    try {
+      const result = await getTrainingSession(prisma, req.context.account, req.params.id);
+      if (!result.ok) {
+        return sendTrainingError(res, result);
+      }
+
+      return res.status(200).json({
+        data: result.session,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.patch("/training/sessions/:id", requireAuthenticatedSession, async (req, res, next) => {
+    try {
+      const result = await updateTrainingSession({
+        prisma,
+        actor: req.context.account,
+        sessionId: req.params.id,
+        body: req.body,
+      });
+      if (!result.ok) {
+        return sendTrainingError(res, result);
+      }
+
+      return res.status(200).json({
+        data: result.session,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.get("/training/self", requireAuthenticatedSession, async (req, res, next) => {
+    try {
+      const result = await listOwnTrainingRecords(prisma, req.context.account);
+      if (!result.ok) {
+        return sendTrainingError(res, result);
+      }
+
+      return res.status(200).json({
+        items: result.items,
+        meta: { count: result.items.length },
+      });
     } catch (error) {
       return next(error);
     }
@@ -1267,7 +1376,7 @@ export function createApp({ prisma, config, requestShutdown = () => {} }) {
           }),
         );
 
-        return res.redirect("/");
+        return res.redirect("/portal");
       } catch (error) {
         return next(error);
       }
@@ -1460,6 +1569,12 @@ async function handleApplicationActionFailure({
       errorMessage: result.message,
     }),
   );
+}
+
+function sendTrainingError(res, result) {
+  const statusCode =
+    result.code === "permission_denied" ? 403 : result.code === "not_found" ? 404 : 400;
+  return sendError(res, statusCode, result.code, result.message);
 }
 
 async function handlePersonnelActionFailure({

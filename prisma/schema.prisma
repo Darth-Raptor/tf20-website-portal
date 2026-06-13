@@ -177,6 +177,11 @@ enum RequestStatus {
   Voided
 }
 
+enum TrainingOutcome {
+  Pass
+  Fail
+}
+
 enum VisibilityLevel {
   Applicant
   Member
@@ -229,6 +234,7 @@ model Account {
   createdAt                  DateTime                 @default(now())
   updatedAt                  DateTime                 @updatedAt
   activatedAt                DateTime?
+  claimedAt                  DateTime?
   lockedAt                   DateTime?
   disabledAt                 DateTime?
   archivedAt                 DateTime?
@@ -539,6 +545,7 @@ model PersonnelProfile {
   source                RecruitingSource?
   joinedAt              DateTime?
   acceptedAt            DateTime?
+  claimedAt             DateTime?
   separatedAt           DateTime?
   createdByAccountId    String?
   createdByAccount      Account?                    @relation("ProfileCreatedBy", fields: [createdByAccountId], references: [id])
@@ -925,6 +932,7 @@ model TrainingCourse {
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
   qualifications CourseQualification[]
+  sessions       TrainingSession[]
   records        TrainingRecord[]
 }
 
@@ -950,22 +958,45 @@ model CourseQualification {
   @@id([courseId, qualificationId])
 }
 
-model TrainingRecord {
+model TrainingSession {
   id                  String           @id @default(cuid())
-  personnelProfileId  String
-  personnelProfile    PersonnelProfile @relation(fields: [personnelProfileId], references: [id])
   courseId            String
   course              TrainingCourse   @relation(fields: [courseId], references: [id])
-  status              RequestStatus    @default(Completed)
+  completedAt         DateTime
   recordedByAccountId String?
-  completedAt         DateTime?
   instructorAccountId String?
   notes               String?          @db.Text
-  auditLogId          String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  records             TrainingRecord[]
 
+  @@index([courseId])
+  @@index([completedAt])
+  @@index([recordedByAccountId])
+}
+
+model TrainingRecord {
+  id                    String                   @id @default(cuid())
+  sessionId             String?
+  session               TrainingSession?         @relation(fields: [sessionId], references: [id])
+  personnelProfileId    String
+  personnelProfile      PersonnelProfile         @relation(fields: [personnelProfileId], references: [id])
+  courseId              String
+  course                TrainingCourse           @relation(fields: [courseId], references: [id])
+  status                RequestStatus            @default(Completed)
+  outcome               TrainingOutcome          @default(Pass)
+  recordedByAccountId   String?
+  completedAt           DateTime?
+  instructorAccountId   String?
+  notes                 String?                  @db.Text
+  auditLogId            String?
+  grantedQualifications PersonnelQualification[] @relation("TrainingRecordQualificationGrants")
+
+  @@index([sessionId])
   @@index([personnelProfileId])
   @@index([courseId])
   @@index([status])
+  @@index([outcome])
 }
 
 model PersonnelQualification {
@@ -974,6 +1005,8 @@ model PersonnelQualification {
   personnelProfile   PersonnelProfile    @relation(fields: [personnelProfileId], references: [id])
   qualificationId    String
   qualification      Qualification       @relation(fields: [qualificationId], references: [id])
+  trainingRecordId   String?
+  trainingRecord     TrainingRecord?     @relation("TrainingRecordQualificationGrants", fields: [trainingRecordId], references: [id])
   status             QualificationStatus @default(Pending)
   grantedAt          DateTime?
   expiresAt          DateTime?
@@ -985,6 +1018,7 @@ model PersonnelQualification {
 
   @@unique([personnelProfileId, qualificationId])
   @@index([status])
+  @@index([trainingRecordId])
 }
 
 model PromotionRequest {

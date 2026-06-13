@@ -57,17 +57,13 @@ test("active member navigation keeps user self pages separate from staff pages",
 });
 
 test("section dashboard stat cards are limited to section dashboard pages", () => {
-  const dashboardMatches = SITE_MAP_SECTIONS.map((section) => findSiteMapNodeByPath(section.path));
+  const dashboardMatches = SITE_MAP_SECTIONS.map((section) =>
+    findSiteMapNodeByPath(section.path),
+  ).filter(isSectionDashboardMatch);
 
   assert.deepEqual(
     dashboardMatches.map((match) => match.node.id),
-    [
-      "user_dashboard",
-      "staff_dashboard",
-      "recruiting_dashboard",
-      "training_dashboard",
-      "admin_dashboard",
-    ],
+    ["staff_dashboard", "recruiting_dashboard", "admin_dashboard"],
   );
   assert.ok(dashboardMatches.every(isSectionDashboardMatch));
 
@@ -175,6 +171,19 @@ test("specialized sections require their sitemap permissions", () => {
   assert.ok(trainer.sections.some((section) => section.id === "training"));
   assert.ok(admin.sections.some((section) => section.id === "admin"));
   assert.deepEqual(blocked.sections, []);
+});
+
+test("training records page replaces reserved training dashboard", () => {
+  const navigation = resolveVisibleNavigation("Active", ["training.record-scoped"]);
+  const visibleMatch = findNavigationNodeByPath(navigation, "/training");
+  const siteMapMatch = findSiteMapNodeByPath("/training");
+
+  assert.equal(visibleMatch.type, "page");
+  assert.equal(visibleMatch.section.id, "training");
+  assert.equal(visibleMatch.node.id, "training_records");
+  assert.equal(visibleMatch.node.label, "Training Records");
+  assert.equal(siteMapMatch.node.id, "training_records");
+  assert.equal(isSectionDashboardMatch(visibleMatch), false);
 });
 
 test("pending applicants can reach their application page", () => {

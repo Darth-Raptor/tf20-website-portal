@@ -2,6 +2,22 @@ import { buildAccessContext } from "./access.mjs";
 import { createRandomId } from "./cookies.mjs";
 
 const DISCORD_API_BASE = "https://discord.com/api/v10";
+const ACCOUNT_ACCESS_INCLUDE = {
+  personnelProfile: true,
+  roleAssignments: {
+    include: {
+      role: {
+        include: {
+          permissions: {
+            include: {
+              permission: true,
+            },
+          },
+        },
+      },
+    },
+  },
+};
 
 export async function buildDiscordAuthorizationUrl(config, state) {
   const url = new URL("https://discord.com/oauth2/authorize");
@@ -80,57 +96,44 @@ export async function resolveAuthenticatedAccount({ prisma, discordUser, guildPa
     },
     include: {
       account: {
-        include: {
-          roleAssignments: {
-            include: {
-              role: {
-                include: {
-                  permissions: {
-                    include: {
-                      permission: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
+        include: ACCOUNT_ACCESS_INCLUDE,
       },
     },
   });
 
   if (authIdentity) {
-    const updated = await prisma.authIdentity.update({
-      where: { id: authIdentity.id },
-      data: {
-        username: discordUser.username,
-        displayName: discordUser.global_name ?? discordUser.username,
-        lastGuildVerifiedAt: new Date(),
-        metadata: guildPayload ?? authIdentity.metadata ?? {},
-      },
-      include: {
-        account: {
-          include: {
-            roleAssignments: {
-              include: {
-                role: {
-                  include: {
-                    permissions: {
-                      include: {
-                        permission: true,
-                      },
-                    },
-                  },
-                },
-              },
-            },
+    const updated = await prisma.$transaction(async (tx) => {
+      const refreshedIdentity = await tx.authIdentity.update({
+        where: { id: authIdentity.id },
+        data: {
+          username: discordUser.username,
+          displayName: discordUser.global_name ?? discordUser.username,
+          lastGuildVerifiedAt: new Date(),
+          metadata: guildPayload ?? authIdentity.metadata ?? {},
+        },
+        include: {
+          account: {
+            include: ACCOUNT_ACCESS_INCLUDE,
           },
         },
-      },
+      });
+
+      await claimCurrentMemberAccount({
+        tx,
+        account: refreshedIdentity.account,
+        authIdentity: refreshedIdentity,
+      });
+
+      return refreshedIdentity;
+    });
+
+    const refreshedAccount = await prisma.account.findUniqueOrThrow({
+      where: { id: updated.accountId },
+      include: ACCOUNT_ACCESS_INCLUDE,
     });
 
     return {
-      account: updated.account,
+      account: refreshedAccount,
       authIdentity: updated,
       created: false,
     };
@@ -194,21 +197,7 @@ export async function resolveAuthenticatedAccount({ prisma, discordUser, guildPa
 
   const refreshedAccount = await prisma.account.findUniqueOrThrow({
     where: { id: result.account.id },
-    include: {
-      roleAssignments: {
-        include: {
-          role: {
-            include: {
-              permissions: {
-                include: {
-                  permission: true,
-                },
-              },
-            },
-          },
-        },
-      },
-    },
+    include: ACCOUNT_ACCESS_INCLUDE,
   });
 
   return {
@@ -216,6 +205,57 @@ export async function resolveAuthenticatedAccount({ prisma, discordUser, guildPa
     authIdentity: result.authIdentity,
     created: true,
   };
+}
+
+async function claimCurrentMemberAccount({ tx, account, authIdentity }) {
+  if (account.status !== "Active" || !account.personnelProfile) {
+    return false;
+  }
+
+  const alreadyClaimed = Boolean(account.claimedAt && account.personnelProfile.claimedAt);
+  if (alreadyClaimed) {
+    return false;
+  }
+
+  const now = new Date();
+  const accountClaimedAt = account.claimedAt ?? now;
+  const personnelProfileClaimedAt = account.personnelProfile.claimedAt ?? now;
+
+  await tx.account.update({
+    where: { id: account.id },
+    data: {
+      claimedAt: accountClaimedAt,
+      displayName: account.displayName ?? authIdentity.displayName ?? authIdentity.username,
+    },
+  });
+
+  await tx.personnelProfile.update({
+    where: { id: account.personnelProfile.id },
+    data: {
+      claimedAt: personnelProfileClaimedAt,
+    },
+  });
+
+  await tx.auditLog.create({
+    data: {
+      actorAccountId: account.id,
+      targetAccountId: account.id,
+      targetPersonnelProfileId: account.personnelProfile.id,
+      module: "accounts",
+      action: "claim-current-member-account",
+      recordType: "Account",
+      recordId: account.id,
+      newValue: {
+        accountClaimedAt,
+        personnelProfileClaimedAt,
+        provider: authIdentity.provider,
+        providerAccountId: authIdentity.providerAccountId,
+      },
+      reason: "Current member claimed account through Discord authentication.",
+    },
+  });
+
+  return true;
 }
 
 export function flattenPermissions(account) {
@@ -274,6 +314,7 @@ export function buildSessionSummary({ account, session, authIdentity }) {
       email: account.email,
       timezone: account.timezone,
       status: account.status,
+      claimedAt: account.claimedAt,
     },
     authIdentity: {
       id: authIdentity.id,

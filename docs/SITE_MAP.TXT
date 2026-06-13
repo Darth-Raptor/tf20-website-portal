@@ -39,7 +39,7 @@ PAGES: PAGES WILL BE THE SECOND LAYER OF THE LEFT SIDE NAVAGATION BAR. CLICKING 
         staff_applicantReview
         recruiting_dashbaord
         recruiting_applications
-        training_dashboard
+        training_records
         admin_dashbaord
 SUBPAGES: SUBPAGES WILL BE PAGES THAT ARE OPENED FROM THEIR LINKED PAGE. THE SUBPAGES WILL BE WHERE USERS WITH THE APPROPRIATE PERMSSIONS WILL MAKE CHANGES AND UPDATES. 
     SUBPAGES LIST:

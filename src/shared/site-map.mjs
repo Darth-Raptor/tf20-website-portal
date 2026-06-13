@@ -12,7 +12,7 @@ export const SITE_MAP_SECTIONS = [
         id: "user_dashboard",
         label: "Dashboard",
         path: "/user",
-        icon: "dashboard",
+        icon: "training",
         visibility: { statuses: ["Active", "Pending"] },
       },
       {
@@ -177,15 +177,14 @@ export const SITE_MAP_SECTIONS = [
     visibility: { statuses: ["Active"], anyOf: ["training.view-scoped", "training.record-scoped"] },
     pages: [
       {
-        id: "training_dashboard",
-        label: "Dashboard",
+        id: "training_records",
+        label: "Training Records",
         path: "/training",
         icon: "dashboard",
         visibility: {
           statuses: ["Active"],
           anyOf: ["training.view-scoped", "training.record-scoped"],
         },
-        reserved: true,
       },
     ],
   },
